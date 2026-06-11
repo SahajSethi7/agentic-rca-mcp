@@ -25,7 +25,7 @@ Prompt v2 adds stricter guidance:
 - recommendations must directly address the root cause;
 - confidence must reflect the available evidence.
 
-Current prompt version: `v2`.
+Historical Phase 2 prompt version: `v2`. Current default prompt: `v3`.
 
 ## Phase 2 Sample Review
 
@@ -69,7 +69,7 @@ This keeps the spirit of 5 Whys while making the system more realistic for produ
 
 ## Phase 3 MVP Freeze
 
-The MVP is frozen with the pipeline reachable through MCP, CLI, and FastAPI, and every path routed through the single `RCAAgent` orchestrator so Phase 4 can upgrade critique/revise without touching entry points. The PDF generator was built directly on ReportLab Platypus with the polish items (dividers, footer page numbers, disclaimer) included from the start, and all four golden-set samples render cleanly through it. `scratch/` was retired from version control rather than deleted, keeping the Phase 1 learning artifacts on disk while removing them from the repo surface. Live end-to-end runs against local Ollama (VS Code invocation, two fresh samples through `server.py`, and the 3x3 freeze drill) remain on the owner's machine checklist because this environment cannot reach a local model. The `mvp` tag is the safety net: everything ambitious that follows builds on top of this frozen, working spine.
+The MVP is frozen with the pipeline reachable through MCP, CLI, and FastAPI, and every path routed through the single `RCAAgent` orchestrator so Phase 4 can upgrade critique/revise without touching entry points. The PDF generator was built directly on ReportLab Platypus with the polish items (dividers, footer page numbers, disclaimer) included from the start, and all four golden-set samples render cleanly through it. `scratch/` was retired from version control rather than deleted, keeping the Phase 1 learning artifacts on disk while removing them from the repo surface. Live local-Ollama smoke runs have now covered the shared MCP tool function, the CLI method paths, and the FastAPI route; VS Code chat invocation remains a desktop integration check rather than a code gap. The `mvp` tag is the safety net: everything ambitious that follows builds on top of this frozen, working spine.
 
 ## Phase 4 Prompt Iteration: v2 to v3
 
@@ -88,3 +88,7 @@ The orchestrator's critique/revise steps are now real but deliberately cheap and
 ## Fishbone And Fault-Tree Scope
 
 Three methods is the ceiling. Fishbone uses five fixed categories (People, Process, Tooling, Environment, Data) with the root cause selected from one of them, and systemic-only People causes. Fault Tree is a two-to-three-level AND/OR outline in `method_detail`, an alternate analytical view rather than formal FTA. Both methods still emit the canonical why_chain so every report renders and evaluates uniformly, and both `parse()` hooks degrade gracefully (a validation note, never a crash) when `method_detail` is malformed.
+
+## Phase 4 Live Verification Refresh
+
+`VALIDATION_MODEL` is set locally to `llama3.2:latest`, while generation remains on `qwen2.5:7b`. The two Phase 4 method sample files now contain live Ollama output rather than hand-written renderer fixtures, and validation notes are intentionally preserved even when they criticize the report. The Fishbone live run exposed a method-consistency blind spot, so the deterministic critique layer now checks Fishbone selected-cause/root-cause alignment and Fault-Tree shape limits before revision. Hosted-open validation is still a credential gap, not a code gap: `HostedProvider` is implemented, but `HOSTED_OPEN_BASE_URL`, `HOSTED_OPEN_API_KEY`, and `HOSTED_OPEN_MODEL` are not present in this workspace or process environment.

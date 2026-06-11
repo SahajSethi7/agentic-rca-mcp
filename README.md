@@ -56,7 +56,8 @@ The local `.env` uses:
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434/v1
 RCA_MODEL=qwen2.5:7b
-RCA_PROMPT_VERSION=v2
+RCA_PROMPT_VERSION=v3
+VALIDATION_MODEL=llama3.2:latest
 ```
 
 ## Run The MCP Server
@@ -75,6 +76,9 @@ and `outputs/Agentic_RCA.json`.
 python -m agentic_rca "checkout requests time out after a database migration"
 python -m agentic_rca "invoice jobs stopped after scheduler change" --method fishbone --severity high --system-area billing
 ```
+
+The Phase 4 sample files in `examples/` were regenerated from live Ollama CLI
+runs with `qwen2.5:7b` and validated by `llama3.2:latest`.
 
 ## Run The FastAPI Service
 

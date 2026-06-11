@@ -92,7 +92,7 @@ Failure handling is fail-soft: on any exception the report is returned unchanged
 
 ### Current Limitation
 
-Hosted-open live verification is still pending real credentials (same status as the retrofit). The path is exercised in code but `VALIDATION_MODEL` remains unset in `.env`, so validation currently falls back to the local default provider.
+Hosted-open live verification is still pending real credentials (same status as the retrofit). The path is exercised in code, and local separate-model validation is now verified with `VALIDATION_MODEL=llama3.2:latest` while generation remains on `qwen2.5:7b`.
 
 ## Build 4 - Prompts v3 (Day 23 secondary + Day 24)
 
@@ -157,14 +157,14 @@ examples/sample_rca_fault_tree_fixture.json
 
 PDF additions: confidence colour chip (green/amber/red) under the title; method shown in the metadata line; Fishbone categories table with the selected cause marked; Fault-Tree indented outline (top event, [AND]/[OR] gates, basic causes); Assumptions, Evidence Needed, and Validation Notes sections that render only when non-empty. HTML mirrors the same section order, including the chip and method sections.
 
-Because live model runs are unavailable in the build environment, two hand-written fixtures (clearly labelled in `source_model` and `examples/sample_inputs.md`) exercise the exact `method_detail` shapes the v3 prompts request. The four golden samples plus both fixtures all render cleanly; pages were visually inspected.
+The two method sample files now contain live Ollama output rather than hand-written renderer fixtures. `sample_rca_fishbone_fixture.json` and `sample_rca_fault_tree_fixture.json` keep their historical filenames, but their `source_model` is `qwen2.5:7b` and their validator notes come from `llama3.2:latest`. The Fishbone run intentionally preserves the bounded-loop trace, including an unresolved method-consistency finding after two revise rounds.
 
 ## Quality Freeze (Day 28)
 
 - README capability section rewritten for the quality layer.
 - DECISIONS.md gained three entries: v2->v3 prompt changes, agent-loop design (and its bounds), and Fishbone/Fault-Tree scope limits.
 - Commit tagged `quality-layer-complete`.
-- Per the project owner's instruction, no test files were added this phase; the agent loop was instead verified with an in-session stub-provider dry run (below).
+- Focused tests now cover the agent tools, orchestrator revise path, and MCP/API/shared-pipeline entrypoint contracts.
 
 ## Verification Summary
 
@@ -182,6 +182,15 @@ fail-soft check: broken reviewer endpoint -> report kept, soft note appended
 
 Plus: `py_compile` green across all touched modules; all six example reports rendered to PDF and HTML; `python3 -c "import server, api"` clean.
 
+Live local-Ollama refresh on 11 June 2026:
+
+```text
+CLI fishbone: qwen2.5:7b generation, llama3.2:latest validation, two bounded method_consistency revise rounds, fixture replaced.
+CLI fault_tree: qwen2.5:7b generation, llama3.2:latest validation, fixture replaced.
+MCP tool function: generate_rca_report wrote outputs/Agentic_RCA.json and outputs/Agentic_RCA.pdf.
+FastAPI route: TestClient POST /rca returned 200 with live qwen2.5:7b output and validator notes.
+```
+
 ## Files Added
 
 ```text
@@ -191,6 +200,9 @@ validation.py
 examples/sample_rca_fishbone_fixture.json
 examples/sample_rca_fault_tree_fixture.json
 docs/phase4_internal_build_notes.md
+tests/test_agent_tools.py
+tests/test_entrypoints.py
+tests/test_orchestrator.py
 ```
 
 ## Files Updated
@@ -209,13 +221,13 @@ rca_agent.py  schemas.py  server.py
 
 ```text
 Agent loop with internal tools: complete, bounded
-Validation pass (validate_rca): complete, fail-soft; hosted-open live run pending credentials
+Validation pass (validate_rca): complete, fail-soft; local separate-model run verified; hosted-open live run pending credentials
 Prompts v3 per-method: complete
 Fishbone + Fault-Tree methods: complete behind registry
 severity/system_area end to end: complete
 Method-aware PDF + HTML: complete
 Quality freeze + tag: complete
-Tests: intentionally skipped per project owner's instruction
+Tests: added for agent tools, orchestrator revise behaviour, and MCP/API/shared pipeline contracts
 ```
 
 ## Owner Checklist (Live Verification)
@@ -227,11 +239,12 @@ python -m agentic_rca "login API returns 500 after deploy"
 # 2. All three methods end to end:
 python -m agentic_rca "checkout requests time out after a database migration" --method fishbone
 python -m agentic_rca "background invoice jobs stopped running" --method fault_tree
-#    -> replace the two hand-written fixtures in examples/ with this live output.
+#    -> completed locally; the historical fixture filenames now contain live output.
 # 3. Context shifts the RCA (Day 26 secondary):
 python -m agentic_rca "checkout requests time out" --severity critical --system-area payments --context "migration finished 10 min before alerts"
-# 4. Validation on a separate model: set VALIDATION_MODEL (and hosted creds if
-#    available) in .env, rerun #1, confirm "[validator:<model>]" notes appear.
+# 4. Validation on a separate model: completed locally with
+#    VALIDATION_MODEL=llama3.2:latest. Hosted creds are still needed for a
+#    hosted-open reviewer run.
 ```
 
 ## Next Implementation Step

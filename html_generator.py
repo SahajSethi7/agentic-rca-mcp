@@ -28,7 +28,7 @@ def _fishbone_section(detail: dict) -> str:
         return ""
     rows = "\n".join(
         f"<tr><td><strong>{escape(str(cat))}</strong></td>"
-        f"<td>{escape('; '.join(str(c) for c in causes) if causes else '—')}</td></tr>"
+        f"<td>{escape('; '.join(str(c) for c in causes) if causes else '-')}</td></tr>"
         for cat, causes in categories.items()
     )
     selected = ""
@@ -92,7 +92,7 @@ def build_html(report: RCAReport) -> str:
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<title>Agentic RCA Report</title></head><body>"
         f"<h1>Agentic RCA Report</h1>"
-        f"<p>{' · '.join(meta_bits)}</p>{chip}"
+        f"<p>{' &middot; '.join(meta_bits)}</p>{chip}"
         f"<h2>Problem</h2><p>{escape(report.problem)}</p>"
         f"<h2>Summary</h2><p>{escape(report.summary)}</p>"
         f"<h2>Why Chain</h2><ol>{whys}</ol>"
@@ -103,7 +103,7 @@ def build_html(report: RCAReport) -> str:
         f"{_list_section('Assumptions', report.assumptions)}"
         f"{_list_section('Evidence Needed', report.evidence_needed)}"
         f"{_list_section('Validation Notes', report.validation_notes)}"
-        "<hr><p><small>AI-generated draft RCA — verify against logs, metrics, "
+        "<hr><p><small>AI-generated draft RCA - verify against logs, metrics, "
         "and timelines before acting.</small></p>"
         "</body></html>"
     )

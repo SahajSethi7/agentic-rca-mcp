@@ -108,7 +108,7 @@ Notes:
 
 - `venv/Scripts/python.exe` matches the repo's actual Windows virtualenv layout (the `.gitignore` confirms `venv/`, not `.venv/`);
 - `envFile` keeps provider/model configuration out of the JSON;
-- live invocation from VS Code chat is on the owner checklist (below) because this environment cannot run Ollama.
+- live invocation from VS Code chat remains an owner desktop-integration check; the shared MCP tool function has been smoke-run locally against Ollama.
 
 ## Build 4 - CLI Entry Point
 
@@ -162,23 +162,23 @@ VS Code mcp.json: written, live invocation pending on owner machine
 CLI entry point: complete
 FastAPI scaffold: already in place from retrofit
 MVP freeze + mvp tag: complete
-Tests: intentionally skipped per project owner's instruction
+Tests: added later for the shared pipeline, MCP tool function forwarding, FastAPI handler forwarding, and orchestrator behaviour
 ```
 
 ## Owner Checklist (Live Verification)
 
-These require local Ollama and cannot run in the build environment:
+Local Ollama smoke coverage completed on 11 June 2026 for the shared MCP tool function, the CLI method paths, and the FastAPI route. VS Code chat invocation is still a manual desktop-integration check:
 
 ```powershell
-# 1. MCP path: restart VS Code, invoke generate_rca_report from chat,
+# 1. VS Code MCP path: restart VS Code, invoke generate_rca_report from chat,
 #    confirm outputs/Agentic_RCA.pdf + .json appear.
 # 2. CLI path:
 python -m agentic_rca "login API returns 500 after deploy"
 # 3. FastAPI path:
 uvicorn api:app --reload
 curl -X POST http://127.0.0.1:8000/rca -H "Content-Type: application/json" -d '{"problem_statement": "login API returns 500 after deploy"}'
-# 4. Freeze drill: run 3 prompts through all 3 entry points; fix nothing new, revert anything broken.
-# 5. Generate 2 fresh samples through server.py and commit them to examples/.
+# 4. Freeze drill: shared tool function, CLI, and FastAPI smoke runs passed locally.
+# 5. Two fresh Phase 4 method samples were generated live and saved in examples/.
 ```
 
 ## Next Implementation Step
