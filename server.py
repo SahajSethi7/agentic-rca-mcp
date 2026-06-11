@@ -35,6 +35,8 @@ def run_rca_pipeline(
     problem_statement: str,
     context: str | None = None,
     method: str = "five_why",
+    severity: str | None = None,
+    system_area: str | None = None,
 ) -> dict[str, Any]:
     """Run the full RCA pipeline and write PDF + JSON artifacts.
 
@@ -44,8 +46,14 @@ def run_rca_pipeline(
     settings = get_settings()
     logger.info("RCA pipeline started (method=%s, provider=%s)", method, settings.provider)
 
-    agent = RCAAgent(timeout_seconds=settings.request_timeout_seconds)
-    report = agent.run(problem_statement, context=context, method=method)
+    agent = RCAAgent(settings=settings)
+    report = agent.run(
+        problem_statement,
+        context=context,
+        method=method,
+        severity=severity,
+        system_area=system_area,
+    )
 
     output_dir = settings.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -66,6 +74,7 @@ def run_rca_pipeline(
         "summary": report.summary,
         "root_cause": report.root_cause,
         "confidence": report.confidence,
+        "method": report.method,
         "source_model": report.source_model,
     }
 
@@ -75,6 +84,8 @@ def generate_rca_report(
     problem_statement: str,
     context: str | None = None,
     method: str = "five_why",
+    severity: str | None = None,
+    system_area: str | None = None,
 ) -> dict[str, Any]:
     """Generate a root cause analysis for an operational problem.
 
@@ -82,11 +93,19 @@ def generate_rca_report(
         problem_statement: Plain-English description of the incident or symptom.
         context: Optional supporting facts (logs, timeline, recent changes).
         method: RCA method - five_why (default), fishbone, or fault_tree.
+        severity: Optional incident severity - low, medium, high, or critical.
+        system_area: Optional affected area, e.g. 'payments' or 'auth'.
 
     Returns paths to the generated PDF and JSON plus a short summary.
     """
     try:
-        return run_rca_pipeline(problem_statement, context=context, method=method)
+        return run_rca_pipeline(
+            problem_statement,
+            context=context,
+            method=method,
+            severity=severity,
+            system_area=system_area,
+        )
     except Exception:
         logger.exception("RCA pipeline failed")
         raise

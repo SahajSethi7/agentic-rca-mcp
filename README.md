@@ -4,8 +4,26 @@ Open-source local-model prototype for generating Root Cause Analysis reports thr
 
 ## Current Status
 
-Phase 3 MVP frozen (ambitious edition): the full pipeline runs end to end from
-three entry points over a fully open stack.
+Phase 4 quality layer complete (ambitious edition). The pipeline is agentic and
+multi-method, reachable from three entry points over a fully open stack.
+
+- Agent loop live: deterministic internal tools (deepening-verifier,
+  symptom-vs-cause checker, anti-blame checker) drive a bounded
+  critique->revise cycle (max 2 rounds, global time budget, deterministic
+  fallback to the last valid report).
+- Validation pass: `validation.py` sends the finished RCA to a reviewer model
+  (`VALIDATION_MODEL`, hosted-open if configured) which sets confidence and
+  appends validation notes. Fails soft.
+- Three methods behind one interface: `five_why` (default), `fishbone`,
+  `fault_tree`, selectable via `method` from MCP, CLI, and API.
+- Prompts v3: per-method system prompts, explicit anti-blame and
+  no-symptom-as-root-cause rules, assumptions/evidence_needed population.
+- Optional input fields `severity` and `system_area` flow through every entry
+  point into every method's prompt.
+- PDF/HTML render every method plus the quality fields (assumptions, evidence
+  needed, confidence chip, validation notes).
+
+Phase 3 MVP spine (tagged `mvp`):
 
 - `server.py`: FastMCP server exposing `generate_rca_report` (problem -> agent -> open model -> validated JSON -> PDF on disk).
 - `agent/orchestrator.py`: bounded plan/generate/critique/revise orchestrator seam (critique/revise are no-ops until Phase 4).
@@ -55,6 +73,7 @@ and `outputs/Agentic_RCA.json`.
 
 ```powershell
 python -m agentic_rca "checkout requests time out after a database migration"
+python -m agentic_rca "invoice jobs stopped after scheduler change" --method fishbone --severity high --system-area billing
 ```
 
 ## Run The FastAPI Service

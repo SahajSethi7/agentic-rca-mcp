@@ -23,4 +23,6 @@ def create_rca(payload: RCAInput) -> RCAReport:
         payload.problem_statement,
         context=payload.context,
         method=payload.method,
+        severity=payload.severity,
+        system_area=payload.system_area,
     )

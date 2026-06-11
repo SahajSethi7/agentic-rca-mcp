@@ -70,3 +70,21 @@ This keeps the spirit of 5 Whys while making the system more realistic for produ
 ## Phase 3 MVP Freeze
 
 The MVP is frozen with the pipeline reachable through MCP, CLI, and FastAPI, and every path routed through the single `RCAAgent` orchestrator so Phase 4 can upgrade critique/revise without touching entry points. The PDF generator was built directly on ReportLab Platypus with the polish items (dividers, footer page numbers, disclaimer) included from the start, and all four golden-set samples render cleanly through it. `scratch/` was retired from version control rather than deleted, keeping the Phase 1 learning artifacts on disk while removing them from the repo surface. Live end-to-end runs against local Ollama (VS Code invocation, two fresh samples through `server.py`, and the 3x3 freeze drill) remain on the owner's machine checklist because this environment cannot reach a local model. The `mvp` tag is the safety net: everything ambitious that follows builds on top of this frozen, working spine.
+
+## Phase 4 Prompt Iteration: v2 to v3
+
+Prompt v2 was a single system prompt for a single method. Phase 4 makes prompts method-aware and agent-aware:
+
+- the v3 system core states five hard rules: never blame a person, never restate the symptom as the root cause, strictly deepening whys, populate assumptions/evidence_needed, honest confidence;
+- each `RCAMethod` contributes a `system_hint()` (why-chain discipline, Fishbone category rules, Fault-Tree shape limits) appended to the v3 core;
+- `build_revise_messages` feeds deterministic critique findings back to the model with the original task and current report, and requires per-fix validation notes;
+- `build_validation_messages` casts a second model as a cold reviewer returning a structured `ValidationVerdict` (confidence + notes) rather than a full report;
+- v1/v2 remain in `PROMPTS` for reproducibility; non-five_why methods require v3.
+
+## Phase 4 Agent Loop Design
+
+The orchestrator's critique/revise steps are now real but deliberately cheap and bounded. Critique is pure-Python (token-overlap deepening check, symptom-vs-cause overlap, blame phrase/pattern matching) so it costs nothing and is reproducible; only revise spends tokens. Bounds: max `RCA_MAX_REVISE_ROUNDS` (default 2) revise rounds inside a global `RCA_AGENT_TIMEOUT_SECONDS` budget, with deterministic fallback to the last valid report on any revise failure, and residual findings recorded in `validation_notes` instead of looping forever. The final validation pass runs once, after the loop, on `VALIDATION_MODEL` when set (hosted-open preferred, local otherwise), and fails soft by appending a note rather than discarding the report. Every quality intervention leaves a visible trace in `validation_notes` ("critique caught X, revise fixed it") so the Phase 4 demonstration requirement is satisfiable from the report itself.
+
+## Fishbone And Fault-Tree Scope
+
+Three methods is the ceiling. Fishbone uses five fixed categories (People, Process, Tooling, Environment, Data) with the root cause selected from one of them, and systemic-only People causes. Fault Tree is a two-to-three-level AND/OR outline in `method_detail`, an alternate analytical view rather than formal FTA. Both methods still emit the canonical why_chain so every report renders and evaluates uniformly, and both `parse()` hooks degrade gracefully (a validation note, never a crash) when `method_detail` is malformed.

@@ -24,8 +24,16 @@ class RCAInput(BaseModel):
         default="five_why",
         description="RCA method to use. five_why remains the canonical default.",
     )
+    severity: Literal["low", "medium", "high", "critical"] | None = Field(
+        default=None,
+        description="Optional incident severity; shifts emphasis in the analysis prompt.",
+    )
+    system_area: str | None = Field(
+        default=None,
+        description="Optional affected system area, e.g. 'payments', 'auth', 'batch jobs'.",
+    )
 
-    @field_validator("problem_statement", "context")
+    @field_validator("problem_statement", "context", "system_area")
     @classmethod
     def reject_empty_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -99,6 +107,10 @@ class RCAReport(BaseModel):
     confidence: Literal["low", "medium", "high"] = Field(
         description="Confidence level based on the available evidence.",
     )
+    method: Literal["five_why", "fishbone", "fault_tree"] | None = Field(
+        default=None,
+        description="RCA method that produced this report; set by the engine.",
+    )
     source_model: str | None = Field(
         default=None,
         description="Model that generated this report; set by the provider.",
@@ -150,3 +162,25 @@ class CritiqueResult(BaseModel):
         description="Whether the RCA was revised after this critique.",
     )
     validation_notes: list[str] = Field(default_factory=list)
+
+
+class ValidationVerdict(BaseModel):
+    """Structured output of the final validation pass over a finished RCA."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    confidence: Literal["low", "medium", "high"] = Field(
+        description="Validator's overall confidence in the RCA given the evidence.",
+    )
+    validation_notes: list[str] = Field(
+        min_length=1,
+        max_length=6,
+        description="Concise critique observations: logic gaps, symptom-as-cause, weak recommendations.",
+    )
+
+    @field_validator("validation_notes")
+    @classmethod
+    def reject_blank_notes(cls, values: list[str]) -> list[str]:
+        if any(not item.strip() for item in values):
+            raise ValueError("validation notes cannot be blank")
+        return values

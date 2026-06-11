@@ -28,11 +28,28 @@ def main(argv: list[str] | None = None) -> int:
         choices=["five_why", "fishbone", "fault_tree"],
         help="RCA method to use (default: five_why).",
     )
+    parser.add_argument(
+        "--severity",
+        default=None,
+        choices=["low", "medium", "high", "critical"],
+        help="Optional incident severity.",
+    )
+    parser.add_argument(
+        "--system-area",
+        default=None,
+        help="Optional affected system area, e.g. 'payments'.",
+    )
     args = parser.parse_args(argv)
 
     from server import run_rca_pipeline
 
-    result = run_rca_pipeline(args.problem, context=args.context, method=args.method)
+    result = run_rca_pipeline(
+        args.problem,
+        context=args.context,
+        method=args.method,
+        severity=args.severity,
+        system_area=args.system_area,
+    )
     print(json.dumps(result, indent=2))
     return 0
 

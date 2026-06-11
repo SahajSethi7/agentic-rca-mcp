@@ -1,0 +1,78 @@
+{
+  "problem": "Background invoice jobs stopped running after a scheduler change.",
+  "summary": "Invoice generation halted because the scheduler migration silently dropped the invoice job definitions and no liveness monitoring existed for batch jobs; both conditions had to hold for the outage to persist unnoticed.",
+  "why_chain": [
+    {
+      "index": 1,
+      "question": "Why did invoice jobs stop running?",
+      "answer": "The new scheduler had no registered invoice job definitions after the migration."
+    },
+    {
+      "index": 2,
+      "question": "Why were the job definitions missing?",
+      "answer": "The migration script only converted jobs listed in the primary config file, and invoice jobs lived in a legacy include file."
+    },
+    {
+      "index": 3,
+      "question": "Why did nobody notice for days?",
+      "answer": "There is no liveness alert on batch job completion, so silence looked like success."
+    },
+    {
+      "index": 4,
+      "question": "Why was there no liveness monitoring?",
+      "answer": "Batch observability was never made a requirement of the job platform; monitoring exists only for request-serving services."
+    }
+  ],
+  "root_cause": "The scheduler migration process had no completeness verification for migrated job definitions, compounded by absent batch-job liveness monitoring.",
+  "contributing_factors": [
+    "Legacy include-file configuration was undocumented.",
+    "Migration was verified by spot-checking a subset of jobs.",
+    "No owner is assigned for batch observability."
+  ],
+  "recommendations": [
+    "Add a post-migration reconciliation step that diffs job inventories between old and new schedulers.",
+    "Add liveness alerts keyed on expected completion windows for every production batch job.",
+    "Consolidate legacy include-file job definitions into the primary configuration."
+  ],
+  "assumptions": [
+    "The legacy include file was the only location of the dropped job definitions."
+  ],
+  "evidence_needed": [
+    "Job inventory exports from the old and new schedulers.",
+    "Scheduler migration script logs from the cutover window."
+  ],
+  "validation_notes": [],
+  "method_detail": {
+    "fault_tree": {
+      "top_event": "Invoice generation halted without detection",
+      "gates": [
+        {
+          "type": "AND",
+          "event": "Outage persisted unnoticed",
+          "children": [
+            "Invoice job definitions missing from new scheduler",
+            "No liveness alert on batch completion"
+          ]
+        },
+        {
+          "type": "OR",
+          "event": "Invoice job definitions missing from new scheduler",
+          "children": [
+            "Migration script ignored legacy include file",
+            "Spot-check verification missed invoice jobs"
+          ]
+        }
+      ],
+      "basic_causes": [
+        "Migration lacked a completeness reconciliation step",
+        "Batch observability never made a platform requirement",
+        "Legacy configuration undocumented"
+      ]
+    }
+  },
+  "confidence": "medium",
+  "method": "fault_tree",
+  "source_model": "fixture (hand-written for renderer development)",
+  "prompt_version": "v3",
+  "latency_seconds": 0.0
+}
