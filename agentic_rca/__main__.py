@@ -10,9 +10,44 @@ import argparse
 import json
 import sys
 
+from schemas import RCA_METHODS, StructuredError
+from utils import append_audit_record, utc_now_iso
+
+_OPTIONS_WITH_VALUES = {"--context", "--method", "--severity", "--system-area"}
+
+
+class StructuredArgumentParser(argparse.ArgumentParser):
+    """Raise instead of printing argparse usage so CLI errors stay structured."""
+
+    def error(self, message: str) -> None:
+        raise ValueError(message)
+
+
+def _audit_hints(argv: list[str]) -> tuple[str, str]:
+    """Best-effort problem/method hints for argument-validation audit records."""
+    problem = ""
+    method = "invalid"
+    skip_next = False
+    for index, token in enumerate(argv):
+        if skip_next:
+            skip_next = False
+            continue
+        if token == "--method":
+            if index + 1 < len(argv) and argv[index + 1] in RCA_METHODS:
+                method = argv[index + 1]
+            skip_next = True
+            continue
+        if token in _OPTIONS_WITH_VALUES:
+            skip_next = True
+            continue
+        if not token.startswith("-") and not problem:
+            problem = token
+    return problem, method
+
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
+    argv_list = list(sys.argv[1:] if argv is None else argv)
+    parser = StructuredArgumentParser(
         prog="agentic_rca",
         description="Run an agentic root cause analysis with an open-source LLM.",
     )
@@ -25,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--method",
         default="five_why",
-        choices=["five_why", "fishbone", "fault_tree"],
+        choices=RCA_METHODS,
         help="RCA method to use (default: five_why).",
     )
     parser.add_argument(
@@ -39,7 +74,30 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional affected system area, e.g. 'payments'.",
     )
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv_list)
+    except ValueError:
+        from config import get_settings
+
+        settings = get_settings()
+        problem, method = _audit_hints(argv_list)
+        structured = StructuredError(
+            error_type="invalid_input",
+            message="The CLI arguments were invalid.",
+            detail="ArgumentParser",
+            timestamp=utc_now_iso(),
+        )
+        append_audit_record(
+            settings=settings,
+            entry_point="cli",
+            problem_statement=problem,
+            method=method,
+            success=False,
+            prompt_version=settings.prompt_version,
+            error_type=structured.error_type,
+        )
+        print(json.dumps(structured.model_dump(), indent=2))
+        return 1
 
     from server import run_rca_pipeline
     from utils import PipelineError, classify_exception

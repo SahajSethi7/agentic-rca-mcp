@@ -11,12 +11,19 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from agent.orchestrator import RCAAgent
 from config import get_settings
-from schemas import RCAInput, RCAReport
-from utils import ERROR_STATUS, PipelineError, append_audit_record, classify_exception
+from schemas import RCA_METHODS, RCAInput, RCAReport, StructuredError
+from utils import (
+    ERROR_STATUS,
+    PipelineError,
+    append_audit_record,
+    classify_exception,
+    utc_now_iso,
+)
 
 logger = logging.getLogger("agentic_rca.api")
 
@@ -28,6 +35,50 @@ async def pipeline_error_handler(request: Request, exc: PipelineError) -> JSONRe
     """Return the structured error envelope instead of a stack trace."""
     status = ERROR_STATUS.get(exc.structured.error_type, 500)
     return JSONResponse(status_code=status, content=exc.structured.model_dump())
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(
+    request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    """Return the project error envelope for body validation failures.
+
+    FastAPI validates ``RCAInput`` before the endpoint function runs. Without
+    this handler those failures would bypass the Phase 5 audit log and return
+    FastAPI's default body, which can echo raw invalid input values.
+    """
+    settings = get_settings()
+    problem_statement = ""
+    method = "invalid"
+    try:
+        body = await request.json()
+        if isinstance(body, dict):
+            value = body.get("problem_statement")
+            if isinstance(value, str):
+                problem_statement = value
+            requested_method = body.get("method")
+            if requested_method in RCA_METHODS:
+                method = requested_method
+    except Exception:
+        pass
+
+    structured = StructuredError(
+        error_type="invalid_input",
+        message="The request body was invalid.",
+        detail=type(exc).__name__,
+        timestamp=utc_now_iso(),
+    )
+    append_audit_record(
+        settings=settings,
+        entry_point="api",
+        problem_statement=problem_statement,
+        method=method,
+        success=False,
+        prompt_version=settings.prompt_version,
+        error_type=structured.error_type,
+    )
+    return JSONResponse(status_code=422, content=structured.model_dump())
 
 
 @app.get("/health")

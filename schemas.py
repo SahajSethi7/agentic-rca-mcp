@@ -6,6 +6,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+RCAMethod = Literal["five_why", "fishbone", "fault_tree"]
+RCA_METHODS: tuple[RCAMethod, ...] = ("five_why", "fishbone", "fault_tree")
+
 
 class RCAInput(BaseModel):
     """Input accepted by the RCA engine."""
@@ -20,7 +23,7 @@ class RCAInput(BaseModel):
         default=None,
         description="Optional supporting facts such as logs, timeline, alerts, or recent changes.",
     )
-    method: Literal["five_why", "fishbone", "fault_tree"] = Field(
+    method: RCAMethod = Field(
         default="five_why",
         description="RCA method to use. five_why remains the canonical default.",
     )
@@ -107,7 +110,7 @@ class RCAReport(BaseModel):
     confidence: Literal["low", "medium", "high"] = Field(
         description="Confidence level based on the available evidence.",
     )
-    method: Literal["five_why", "fishbone", "fault_tree"] | None = Field(
+    method: RCAMethod | None = Field(
         default=None,
         description="RCA method that produced this report; set by the engine.",
     )

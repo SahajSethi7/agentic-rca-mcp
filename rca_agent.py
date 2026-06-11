@@ -12,6 +12,7 @@ from methods import get_method
 from providers.base import RCAProvider
 from providers.hosted_provider import HostedProvider
 from providers.ollama_provider import OllamaProvider
+from sanitizer import sanitize_rca_input
 from schemas import RCAInput, RCAReport
 
 
@@ -33,10 +34,12 @@ def generate_rca(
     system_area: str | None = None,
     provider: RCAProvider | None = None,
     settings: Settings | None = None,
+    sanitize_input: bool = True,
 ) -> RCAReport:
     """Generate a validated RCA report with one stricter retry on failure."""
     settings = settings or get_settings()
     selected_provider = provider or build_provider(settings)
+    sanitizer_findings: list[str] = []
     rca_input = RCAInput(
         problem_statement=problem,
         context=context,
@@ -44,6 +47,8 @@ def generate_rca(
         severity=severity,
         system_area=system_area,
     )
+    if sanitize_input:
+        rca_input, sanitizer_findings = sanitize_rca_input(rca_input, settings)
 
     try:
         report = selected_provider.generate(
@@ -56,10 +61,7 @@ def generate_rca(
         # sterner prompt, so they propagate to the structured-error layer.
         from utils import classify_exception
 
-        if classify_exception(exc).error_type not in {
-            "model_output_invalid",
-            "internal_error",
-        }:
+        if classify_exception(exc).error_type != "model_output_invalid":
             raise
         report = selected_provider.generate(
             rca_input,
@@ -68,4 +70,14 @@ def generate_rca(
         )
 
     report = get_method(rca_input.method).parse(report)
-    return report.model_copy(update={"method": rca_input.method})
+    report = report.model_copy(update={"method": rca_input.method})
+    if sanitizer_findings:
+        report = report.model_copy(
+            update={
+                "validation_notes": [
+                    *report.validation_notes,
+                    *[f"[sanitizer] {finding}" for finding in sanitizer_findings],
+                ]
+            }
+        )
+    return report

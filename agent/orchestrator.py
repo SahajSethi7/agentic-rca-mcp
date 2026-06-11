@@ -72,6 +72,7 @@ class RCAAgent:
             system_area=rca_input.system_area,
             provider=self.provider,
             settings=self.settings,
+            sanitize_input=False,
         )
 
     def critique(self, report: RCAReport) -> CritiqueResult:
@@ -212,7 +213,10 @@ class RCAAgent:
                 fallback_provider=self._provider,
                 settings=self.settings,
             )
-            self.last_run_stats["validation_model"] = self.settings.validation_model
+            self.last_run_stats["validation_model"] = (
+                self.settings.validation_model
+                or (self._provider.model if self._provider is not None else None)
+            )
 
         # Phase 5 hard guardrail: an RCA that still blames an individual after
         # the loop and the validation pass must never ship with elevated

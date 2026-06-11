@@ -62,9 +62,15 @@ def classify_exception(exc: Exception) -> StructuredError:
     error_type = "internal_error"
     message = "The RCA pipeline failed unexpectedly."
 
-    if isinstance(exc, (ValidationError, ValueError)):
+    if isinstance(exc, ValidationError) and exc.title == "RCAReport":
+        error_type = "model_output_invalid"
+        message = "The model returned a malformed RCA report."
+    elif isinstance(exc, ValidationError):
         error_type = "invalid_input"
-        message = "The request was invalid: " + _first_line(str(exc), limit=200)
+        message = "The request body or structured input was invalid."
+    elif isinstance(exc, ValueError):
+        error_type = "invalid_input"
+        message = "The request was invalid."
     elif isinstance(exc, PermissionError):
         error_type = "write_denied"
         message = "Refused to write outside the configured OUTPUT_DIR."
@@ -95,9 +101,6 @@ def classify_exception(exc: Exception) -> StructuredError:
             "The model repeatedly returned output that failed schema "
             "validation, even after bounded retries."
         )
-    elif isinstance(exc, ValidationError) and exc.title == "RCAReport":
-        error_type = "model_output_invalid"
-        message = "The model returned a malformed RCA report."
 
     return StructuredError(
         error_type=error_type,
@@ -105,11 +108,6 @@ def classify_exception(exc: Exception) -> StructuredError:
         detail=name,
         timestamp=utc_now_iso(),
     )
-
-
-def _first_line(text: str, *, limit: int) -> str:
-    line = text.strip().splitlines()[0] if text.strip() else "validation failed"
-    return line[:limit]
 
 
 def utc_now_iso() -> str:

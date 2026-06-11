@@ -50,15 +50,18 @@ _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("api_key", re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b")),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")),
     ("bearer_token", re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}")),
+    ("basic_auth", re.compile(r"(?i)\bbasic\s+[A-Za-z0-9+/=]{16,}")),
     (
         "credential_assignment",
         # password=hunter2, api_key: abc123, "token" = ... ; redact value only.
         re.compile(
-            r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|auth)\b"
-            r"(\s*[:=]\s*)(?!\[REDACTED)([^\s,;'\"]+)"
+            r"(?i)\b("
+            r"aws[_-]?secret[_-]?access[_-]?key|client[_-]?secret|private[_-]?key|"
+            r"password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|auth"
+            r")\b(\s*[:=]\s*)(?!\[REDACTED)(?:\"[^\"]*\"|'[^']*'|[^\s,;'\"]+)"
         ),
     ),
-    ("hex_secret", re.compile(r"\b[0-9a-fA-F]{40,}\b")),
+    ("hex_secret", re.compile(r"\b[0-9a-fA-F]{48,}\b")),
 ]
 
 # Phrases that read as attempts to reprogram the model rather than describe an

@@ -16,7 +16,9 @@ from conftest import CapturingStubProvider, clean_report_payload
 from fastapi.testclient import TestClient
 
 from agent.orchestrator import RCAAgent
+from agentic_rca.__main__ import main as cli_main
 from config import Settings
+from rca_agent import generate_rca
 from utils import (
     PipelineError,
     audit_log_path,
@@ -109,6 +111,66 @@ def test_api_rejects_empty_problem_with_422(monkeypatch, guarded_settings) -> No
     response = client.post("/rca", json={"problem_statement": ""})
 
     assert response.status_code == 422
+    body = response.json()
+    assert body["status"] == "error"
+    assert body["error_type"] == "invalid_input"
+    assert body["detail"] == "RequestValidationError"
+    assert '"input"' not in response.text
+    records = read_audit_records(guarded_settings)
+    assert records and records[-1]["entry_point"] == "api"
+    assert records[-1]["success"] is False
+    assert records[-1]["error_type"] == "invalid_input"
+
+
+def test_api_validation_error_does_not_echo_raw_invalid_input(
+    monkeypatch,
+    guarded_settings,
+) -> None:
+    import api
+
+    monkeypatch.setattr(api, "get_settings", lambda: guarded_settings)
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/rca",
+        json={
+            "problem_statement": "bad",
+            "method": "rubber_duck",
+        },
+    )
+
+    assert response.status_code == 422
+    raw_body = response.text
+    assert "rubber_duck" not in raw_body
+    assert '"input"' not in raw_body
+    assert response.json()["error_type"] == "invalid_input"
+
+
+def test_cli_argument_error_is_structured_and_audited(
+    monkeypatch,
+    guarded_settings,
+    capsys,
+) -> None:
+    import config
+
+    monkeypatch.setattr(config, "get_settings", lambda: guarded_settings)
+
+    exit_code = cli_main(
+        [
+            "checkout requests time out after a database migration",
+            "--method",
+            "rubber_duck",
+        ]
+    )
+
+    assert exit_code == 1
+    body = json.loads(capsys.readouterr().out)
+    assert body["status"] == "error"
+    assert body["error_type"] == "invalid_input"
+    records = read_audit_records(guarded_settings)
+    assert records and records[-1]["entry_point"] == "cli"
+    assert records[-1]["success"] is False
+    assert records[-1]["method"] == "invalid"
 
 
 # --- bad dependencies (model unreachable / auth / timeout / bad output) ------
@@ -248,6 +310,34 @@ def test_secret_never_reaches_model_or_audit_log(
     raw_log = audit_log_path(guarded_settings).read_text(encoding="utf-8")
     assert secret not in raw_log
     assert "redacted" in raw_log
+
+
+def test_direct_generate_rca_sanitizes_before_provider(guarded_settings) -> None:
+    secret = "sk-abc123def456ghi789jkl"
+    provider = CapturingStubProvider()
+
+    report = generate_rca(
+        f"checkout fails after deploy with api_key={secret}",
+        provider=provider,
+        settings=guarded_settings,
+    )
+
+    assert secret not in provider.seen_inputs[0].problem_statement
+    assert "[REDACTED:" in provider.seen_inputs[0].problem_statement
+    assert any("[sanitizer]" in note for note in report.validation_notes)
+
+
+def test_unexpected_provider_error_is_not_strict_retried(guarded_settings) -> None:
+    provider = CapturingStubProvider(generate_error=RuntimeError("provider bug"))
+
+    with pytest.raises(RuntimeError):
+        generate_rca(
+            "checkout requests time out after a database migration",
+            provider=provider,
+            settings=guarded_settings,
+        )
+
+    assert len(provider.seen_inputs) == 1
 
 
 def test_giant_input_is_truncated_before_the_model(

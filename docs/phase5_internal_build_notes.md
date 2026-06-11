@@ -43,10 +43,12 @@ tests/test_sanitizer.py
 text-stable defenses:
 
 - `redact_secrets`: ordered regex bank (private key blocks, AWS/GitHub/Slack
-  tokens, `sk-` API keys, JWTs, bearer tokens, `password=...` assignments,
-  40+-char hex) replacing matches with `[REDACTED:<kind>]`. The
+  tokens, `sk-` API keys, JWTs, bearer/basic tokens, `password=...`
+  assignments, 48+-char hex) replacing matches with `[REDACTED:<kind>]`. The
   credential-assignment pattern redacts the value only and carries a negative
-  lookahead so a second pass never re-fires.
+  lookahead so a second pass never re-fires. The hex threshold deliberately
+  starts above the 40-character git SHA length to avoid redacting ordinary
+  commit references.
 - `enforce_length`: per-field budgets (`RCA_MAX_INPUT_CHARS`=6000,
   `RCA_MAX_CONTEXT_CHARS`=12000, 200 for `system_area`) with an explicit
   `[TRUNCATED BY SANITIZER]` marker, stable across repeat passes.
@@ -101,7 +103,10 @@ server.py  api.py  agentic_rca/__main__.py
 - Entry-point behavior: the MCP tool returns the envelope as its result
   (never raises at the client boundary); the CLI prints it and exits 1;
   FastAPI maps error_type to an HTTP status (422/502/503/504) via a
-  `PipelineError` exception handler.
+  `PipelineError` exception handler. FastAPI request-body validation errors
+  also use a `RequestValidationError` handler so pre-endpoint failures return
+  the same safe envelope, write a failure audit record, and never echo raw
+  invalid input.
 - Anti-blame hard cap (see Build 4) covers every method because the
   deterministic blame check runs on the canonical fields all methods share.
 
@@ -214,7 +219,7 @@ tests/test_guardrails.py  tests/conftest.py
 ## Verification Summary
 
 ```text
-pytest: 62 passed (sandbox, stub providers, no network)
+pytest: 69 passed (sandbox, stub providers, no network)
 ruff check .: clean (E/F/W/I, whole repo)
 py_compile: all touched modules green; python -c "import server, api" clean
 existing Phase 3/4 tests: green after the entry_point/audit-aware updates
