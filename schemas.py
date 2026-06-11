@@ -164,6 +164,37 @@ class CritiqueResult(BaseModel):
     validation_notes: list[str] = Field(default_factory=list)
 
 
+class StructuredError(BaseModel):
+    """Clean, client-safe error envelope returned instead of stack traces.
+
+    Phase 5 guardrail: every entry point (MCP, CLI, API) maps pipeline
+    failures to this shape so callers always get a structured, actionable
+    error and never a traceback or raw provider payload.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    status: Literal["error"] = "error"
+    error_type: Literal[
+        "invalid_input",
+        "provider_unreachable",
+        "provider_auth",
+        "provider_timeout",
+        "model_output_invalid",
+        "write_denied",
+        "internal_error",
+    ] = Field(description="Stable, machine-readable failure category.")
+    message: str = Field(
+        min_length=5,
+        description="Human-readable, client-safe explanation with no stack trace.",
+    )
+    detail: str | None = Field(
+        default=None,
+        description="Short diagnostic hint, e.g. the exception class name.",
+    )
+    timestamp: str = Field(description="UTC ISO-8601 time the error was classified.")
+
+
 class ValidationVerdict(BaseModel):
     """Structured output of the final validation pass over a finished RCA."""
 

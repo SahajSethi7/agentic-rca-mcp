@@ -89,6 +89,26 @@ The orchestrator's critique/revise steps are now real but deliberately cheap and
 
 Three methods is the ceiling. Fishbone uses five fixed categories (People, Process, Tooling, Environment, Data) with the root cause selected from one of them, and systemic-only People causes. Fault Tree is a two-to-three-level AND/OR outline in `method_detail`, an alternate analytical view rather than formal FTA. Both methods still emit the canonical why_chain so every report renders and evaluates uniformly, and both `parse()` hooks degrade gracefully (a validation note, never a crash) when `method_detail` is malformed.
 
+## Phase 5 Sanitizer Placement
+
+The sanitizer runs inside `RCAAgent.run`, immediately after `RCAInput` validation and before any prompt construction, rather than separately at each entry point. Every surface (MCP tool, CLI, FastAPI) routes through the orchestrator, so a single chokepoint cannot be bypassed and new entry points inherit the protection for free. Injection-flavoured text is deliberately kept (a log line quoting an attack is legitimate incident data) but fenced between sentinel delimiters that the sanitizer strips from user input, so the fence cannot be forged from inside the data. Secrets are redacted before the text reaches a model, the audit log, or a report artifact. Sanitizer findings surface twice: as `[sanitizer]` validation notes in the report and as a `sanitizer_findings` array in the audit record.
+
+## Phase 5 Structured Error Envelope
+
+Failures map to a `StructuredError` (status/error_type/message/detail/timestamp) via `utils.classify_exception`, which detects provider exceptions structurally (class-name and status-code shape) instead of importing every provider's exception types - stub-based tests and future providers need no real openai classes. The MCP tool returns the envelope instead of raising, the CLI prints it and exits 1, and FastAPI maps error_type to an HTTP status (422/502/503/504). The single-retry policy in `generate_rca` became error-aware: only output-shaped failures (malformed JSON / schema misses) earn the stricter retry, while connectivity, auth, and timeout failures propagate immediately because a sterner prompt cannot fix them.
+
+## Phase 5 Audit Log Shape
+
+The audit log is JSONL at `OUTPUT_DIR/audit_log.jsonl`, one record per invocation across all entry points, success or failure. It stores a 16-hex-char SHA-256 of the problem statement rather than the text, so the log itself cannot leak incident details or any secret the redactor missed. `model+method+rounds` fields are present specifically so the Phase 6 benchmark and demo can read real usage data. Audit writes are fail-soft: a logging failure never breaks a run.
+
+## Phase 5 Blame Guardrail
+
+The deterministic anti-blame critique already fed the revise loop; Phase 5 adds a hard cap after the loop and the validation pass: if blame language survives both, confidence is forced to `low` with a `[guardrail]` note, regardless of what any model said. Rationale: an RCA that names an individual is the one defect that must never ship with elevated confidence, and a deterministic cap is cheaper and more reliable than another model round.
+
+## Phase 5 Container And CI Shape
+
+The Dockerfile's default command is the FastAPI service (the long-running surface); the CLI and tests run as one-off `docker compose run` commands against the same image. The compose file uses `environment:` with `${VAR:-default}` passthrough instead of a required `env_file`, so a fresh clone works without creating `.env` and the hosted-open path works by exporting `HOSTED_OPEN_*` in the host shell. `OLLAMA_BASE_URL` is pinned to the service name (`http://ollama:11434/v1`) inside the network. CI runs three jobs - ruff lint, pytest, docker build - with the build gated on the first two. Model weights are not baked into the image; the owner pulls them into the named `ollama` volume once.
+
 ## Phase 4 Live Verification Refresh
 
 `VALIDATION_MODEL` is set locally to `llama3.2:latest`, while generation remains on `qwen2.5:7b`. The two Phase 4 method sample files now contain live Ollama output rather than hand-written renderer fixtures, and validation notes are intentionally preserved even when they criticize the report. The Fishbone live run exposed a method-consistency blind spot, so the deterministic critique layer now checks Fishbone selected-cause/root-cause alignment and Fault-Tree shape limits before revision. Hosted-open validation is still a credential gap, not a code gap: `HostedProvider` is implemented, but `HOSTED_OPEN_BASE_URL`, `HOSTED_OPEN_API_KEY`, and `HOSTED_OPEN_MODEL` are not present in this workspace or process environment.

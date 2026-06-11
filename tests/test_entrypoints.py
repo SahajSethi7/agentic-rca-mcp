@@ -116,6 +116,7 @@ def test_mcp_tool_function_forwards_to_shared_pipeline(monkeypatch) -> None:
         method: str = "five_why",
         severity: str | None = None,
         system_area: str | None = None,
+        entry_point: str = "mcp",
     ) -> dict:
         captured.update(
             {
@@ -124,6 +125,7 @@ def test_mcp_tool_function_forwards_to_shared_pipeline(monkeypatch) -> None:
                 "method": method,
                 "severity": severity,
                 "system_area": system_area,
+                "entry_point": entry_point,
             }
         )
         return {"summary": "ok", "method": method}
@@ -141,14 +143,18 @@ def test_mcp_tool_function_forwards_to_shared_pipeline(monkeypatch) -> None:
     assert result == {"summary": "ok", "method": "fishbone"}
     assert captured["context"] == "Migration finished ten minutes before alerts."
     assert captured["severity"] == "critical"
+    assert captured["entry_point"] == "mcp"
 
 
-def test_fastapi_handler_forwards_all_context_fields(monkeypatch) -> None:
+def test_fastapi_handler_forwards_all_context_fields(monkeypatch, tmp_path: Path) -> None:
     import api
 
     captured: dict[str, str | None] = {}
 
     class FakeAgent:
+        def __init__(self, settings: Settings | None = None) -> None:
+            self.settings = settings
+
         def run(
             self,
             problem: str,
@@ -168,6 +174,7 @@ def test_fastapi_handler_forwards_all_context_fields(monkeypatch) -> None:
             )
             return RCAReport.model_validate(report_payload(method=method))
 
+    monkeypatch.setattr(api, "get_settings", lambda: Settings(output_dir=tmp_path))
     monkeypatch.setattr(api, "RCAAgent", FakeAgent)
 
     response = api.create_rca(

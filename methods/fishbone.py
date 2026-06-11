@@ -5,7 +5,6 @@ from __future__ import annotations
 from methods.base import RCAMethod, describe_input_context
 from schemas import RCAInput, RCAReport
 
-
 FISHBONE_CATEGORIES = ["People", "Process", "Tooling", "Environment", "Data"]
 
 

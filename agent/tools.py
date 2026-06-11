@@ -11,7 +11,6 @@ import re
 
 from schemas import CritiqueIssue, RCAReport
 
-
 _STOPWORDS = {
     "a", "an", "and", "after", "are", "as", "at", "be", "because", "been", "by",
     "for", "from", "had", "has", "have", "in", "is", "it", "its", "of", "on",

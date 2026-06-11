@@ -22,6 +22,7 @@ class OllamaProvider(RCAProvider):
         openai_client = OpenAI(
             base_url=self.settings.ollama_base_url,
             api_key="ollama",
+            timeout=self.settings.request_timeout_seconds,
         )
         self.client = instructor.from_openai(openai_client, mode=instructor.Mode.JSON)
 

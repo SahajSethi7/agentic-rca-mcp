@@ -18,9 +18,9 @@ from config import Settings, get_settings
 from prompts import build_revise_messages
 from providers.base import RCAProvider
 from rca_agent import build_provider, generate_rca
+from sanitizer import sanitize_rca_input
 from schemas import CritiqueResult, RCAInput, RCAReport
 from validation import validate_rca
-
 
 logger = logging.getLogger("agentic_rca.orchestrator")
 
@@ -43,6 +43,8 @@ class RCAAgent:
             if max_revise_rounds is not None
             else self.settings.max_revise_rounds
         )
+        # Populated by run(); read by the audit logger (Phase 5).
+        self.last_run_stats: dict[str, Any] = {}
 
     @property
     def provider(self) -> RCAProvider:
@@ -114,8 +116,23 @@ class RCAAgent:
             severity=severity,
             system_area=system_area,
         )
+        # Phase 5: sanitize ahead of prompt construction. Every entry point
+        # (MCP, CLI, API) routes through here, so none can bypass it.
+        rca_input, sanitizer_findings = sanitize_rca_input(rca_input, self.settings)
+        if sanitizer_findings:
+            logger.info("Sanitizer findings: %s", sanitizer_findings)
+
+        self.last_run_stats = {
+            "method": rca_input.method,
+            "sanitizer_findings": sanitizer_findings,
+            "rounds": 0,
+            "generation_model": None,
+            "validation_model": None,
+        }
+
         self.plan(rca_input)
         report = self.generate(rca_input)
+        self.last_run_stats["generation_model"] = report.source_model
 
         rounds = 0
         while rounds < self.max_revise_rounds:
@@ -173,6 +190,7 @@ class RCAAgent:
                 }
             )
             rounds += 1
+            self.last_run_stats["rounds"] = rounds
 
         residual = run_all_checks(report)
         if residual:
@@ -194,5 +212,32 @@ class RCAAgent:
                 fallback_provider=self._provider,
                 settings=self.settings,
             )
+            self.last_run_stats["validation_model"] = self.settings.validation_model
 
+        # Phase 5 hard guardrail: an RCA that still blames an individual after
+        # the loop and the validation pass must never ship with elevated
+        # confidence, whatever any model said.
+        if any(issue.check == "anti_blame" for issue in residual) and report.confidence != "low":
+            report = report.model_copy(
+                update={
+                    "confidence": "low",
+                    "validation_notes": [
+                        *report.validation_notes,
+                        "[guardrail] unresolved blame language after the agent "
+                        "loop; confidence capped at low.",
+                    ],
+                }
+            )
+
+        if sanitizer_findings:
+            report = report.model_copy(
+                update={
+                    "validation_notes": [
+                        *report.validation_notes,
+                        *[f"[sanitizer] {finding}" for finding in sanitizer_findings],
+                    ]
+                }
+            )
+
+        self.last_run_stats["confidence"] = report.confidence
         return report

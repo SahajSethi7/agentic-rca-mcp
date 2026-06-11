@@ -42,14 +42,24 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     from server import run_rca_pipeline
+    from utils import PipelineError, classify_exception
 
-    result = run_rca_pipeline(
-        args.problem,
-        context=args.context,
-        method=args.method,
-        severity=args.severity,
-        system_area=args.system_area,
-    )
+    try:
+        result = run_rca_pipeline(
+            args.problem,
+            context=args.context,
+            method=args.method,
+            severity=args.severity,
+            system_area=args.system_area,
+            entry_point="cli",
+        )
+    except PipelineError as exc:
+        print(json.dumps(exc.structured.model_dump(), indent=2))
+        return 1
+    except Exception as exc:  # Never show a stack trace to the operator.
+        print(json.dumps(classify_exception(exc).model_dump(), indent=2))
+        return 1
+
     print(json.dumps(result, indent=2))
     return 0
 

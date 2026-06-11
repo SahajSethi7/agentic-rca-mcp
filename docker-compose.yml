@@ -1,8 +1,24 @@
 services:
   app:
     build: .
-    env_file:
-      - .env
+    ports:
+      - "8000:8000"
+    environment:
+      # Inside the compose network the Ollama service is reachable by name,
+      # not localhost. Everything else passes through from the host shell or
+      # an optional .env so the hosted-open path works unchanged:
+      #   HOSTED_OPEN_API_KEY=... docker compose up
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+      RCA_MODEL: ${RCA_MODEL:-qwen2.5:7b}
+      RCA_PROMPT_VERSION: ${RCA_PROMPT_VERSION:-v3}
+      RCA_VALIDATION_ENABLED: ${RCA_VALIDATION_ENABLED:-true}
+      VALIDATION_MODEL: ${VALIDATION_MODEL:-llama3.2:latest}
+      HOSTED_OPEN_BASE_URL: ${HOSTED_OPEN_BASE_URL:-}
+      HOSTED_OPEN_API_KEY: ${HOSTED_OPEN_API_KEY:-}
+      HOSTED_OPEN_MODEL: ${HOSTED_OPEN_MODEL:-}
+      OUTPUT_DIR: /app/outputs
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ./outputs:/app/outputs
     depends_on:

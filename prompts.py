@@ -12,7 +12,6 @@ from __future__ import annotations
 from methods import get_method
 from schemas import CritiqueResult, RCAInput, RCAReport
 
-
 PROMPT_V1 = {
     "name": "v1",
     "system": (

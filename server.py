@@ -17,7 +17,12 @@ from fastmcp import FastMCP
 from agent.orchestrator import RCAAgent
 from config import get_settings
 from pdf_generator import build_pdf
-
+from utils import (
+    PipelineError,
+    append_audit_record,
+    classify_exception,
+    enforce_output_path,
+)
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -37,30 +42,72 @@ def run_rca_pipeline(
     method: str = "five_why",
     severity: str | None = None,
     system_area: str | None = None,
+    entry_point: str = "mcp",
 ) -> dict[str, Any]:
     """Run the full RCA pipeline and write PDF + JSON artifacts.
 
     Shared by the MCP tool and the CLI so every entry point exercises the
-    same orchestrator path.
+    same orchestrator path. Phase 5: failures are converted to a clean
+    ``PipelineError`` carrying a ``StructuredError`` (never a stack trace),
+    writes are restricted to OUTPUT_DIR, and every invocation - success or
+    failure - lands in the JSONL audit log.
     """
     settings = get_settings()
     logger.info("RCA pipeline started (method=%s, provider=%s)", method, settings.provider)
 
     agent = RCAAgent(settings=settings)
-    report = agent.run(
-        problem_statement,
-        context=context,
+    try:
+        report = agent.run(
+            problem_statement,
+            context=context,
+            method=method,
+            severity=severity,
+            system_area=system_area,
+        )
+
+        output_dir = settings.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        pdf_path = build_pdf(
+            report,
+            enforce_output_path(output_dir / PDF_NAME, settings),
+        )
+        json_path = enforce_output_path(output_dir / JSON_NAME, settings)
+        json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    except Exception as exc:
+        structured = classify_exception(exc)
+        logger.exception("RCA pipeline failed (%s)", structured.error_type)
+        stats = getattr(agent, "last_run_stats", {})
+        append_audit_record(
+            settings=settings,
+            entry_point=entry_point,
+            problem_statement=problem_statement,
+            method=method,
+            success=False,
+            generation_model=stats.get("generation_model"),
+            validation_model=stats.get("validation_model"),
+            prompt_version=settings.prompt_version,
+            rounds=stats.get("rounds"),
+            sanitizer_findings=stats.get("sanitizer_findings"),
+            error_type=structured.error_type,
+        )
+        raise PipelineError(structured) from exc
+
+    stats = getattr(agent, "last_run_stats", {})
+    append_audit_record(
+        settings=settings,
+        entry_point=entry_point,
+        problem_statement=problem_statement,
         method=method,
-        severity=severity,
-        system_area=system_area,
+        success=True,
+        generation_model=report.source_model,
+        validation_model=stats.get("validation_model"),
+        prompt_version=report.prompt_version,
+        confidence=report.confidence,
+        rounds=stats.get("rounds"),
+        latency_seconds=report.latency_seconds,
+        sanitizer_findings=stats.get("sanitizer_findings"),
     )
-
-    output_dir = settings.output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    pdf_path = build_pdf(report, output_dir / PDF_NAME)
-    json_path = output_dir / JSON_NAME
-    json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
 
     logger.info(
         "RCA pipeline finished (model=%s, latency=%ss, confidence=%s)",
@@ -96,7 +143,9 @@ def generate_rca_report(
         severity: Optional incident severity - low, medium, high, or critical.
         system_area: Optional affected area, e.g. 'payments' or 'auth'.
 
-    Returns paths to the generated PDF and JSON plus a short summary.
+    Returns paths to the generated PDF and JSON plus a short summary. On
+    failure, returns a structured error object (status/error_type/message)
+    instead of raising, so the calling client never sees a stack trace.
     """
     try:
         return run_rca_pipeline(
@@ -105,10 +154,13 @@ def generate_rca_report(
             method=method,
             severity=severity,
             system_area=system_area,
+            entry_point="mcp",
         )
-    except Exception:
-        logger.exception("RCA pipeline failed")
-        raise
+    except PipelineError as exc:
+        return exc.structured.model_dump()
+    except Exception as exc:  # Belt and braces: never leak a traceback.
+        logger.exception("RCA pipeline failed outside the structured path")
+        return classify_exception(exc).model_dump()
 
 
 if __name__ == "__main__":

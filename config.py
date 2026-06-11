@@ -8,7 +8,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 load_dotenv()
 
 
@@ -28,6 +27,8 @@ class Settings:
     max_revise_rounds: int = int(os.getenv("RCA_MAX_REVISE_ROUNDS", "2"))
     validation_enabled: bool = os.getenv("RCA_VALIDATION_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
     output_dir: Path = Path(os.getenv("OUTPUT_DIR", "./outputs"))
+    max_input_chars: int = int(os.getenv("RCA_MAX_INPUT_CHARS", "6000"))
+    max_context_chars: int = int(os.getenv("RCA_MAX_CONTEXT_CHARS", "12000"))
     eval_models: tuple[str, ...] = tuple(
         model.strip()
         for model in os.getenv("RCA_EVAL_MODELS", "qwen2.5:7b,llama3.2:latest").split(",")

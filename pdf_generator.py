@@ -30,7 +30,6 @@ from reportlab.platypus import (
 
 from schemas import RCAReport
 
-
 ACCENT = colors.HexColor("#1f3a5f")
 LIGHT_ROW = colors.HexColor("#eef2f7")
 RULE_GREY = colors.HexColor("#c8cfd8")

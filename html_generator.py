@@ -11,7 +11,6 @@ from html import escape
 
 from schemas import RCAReport
 
-
 CONFIDENCE_COLORS = {"high": "#1e7a3d", "medium": "#b06f00", "low": "#b3261e"}
 
 

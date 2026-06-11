@@ -19,7 +19,6 @@ from providers.ollama_provider import OllamaProvider
 from rca_agent import generate_rca
 from schemas import RCAReport
 
-
 INCIDENTS = [
     "Login API returns HTTP 500 immediately after a deployment.",
     "Checkout requests time out after a database migration.",

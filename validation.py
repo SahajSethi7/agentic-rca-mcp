@@ -17,7 +17,6 @@ from providers.hosted_provider import HostedProvider
 from providers.ollama_provider import OllamaProvider
 from schemas import RCAReport, ValidationVerdict
 
-
 logger = logging.getLogger("agentic_rca.validation")
 
 

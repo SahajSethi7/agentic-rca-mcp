@@ -50,7 +50,17 @@ def generate_rca(
             rca_input,
             prompt_version=settings.prompt_version,
         )
-    except Exception:
+    except Exception as exc:
+        # Phase 5: only output-shaped failures earn the stricter retry.
+        # Connectivity, auth, and timeout failures will not be fixed by a
+        # sterner prompt, so they propagate to the structured-error layer.
+        from utils import classify_exception
+
+        if classify_exception(exc).error_type not in {
+            "model_output_invalid",
+            "internal_error",
+        }:
+            raise
         report = selected_provider.generate(
             rca_input,
             prompt_version=settings.prompt_version,

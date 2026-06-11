@@ -1,11 +1,33 @@
 # Agentic RCA MCP Server
 
+![CI](https://github.com/OWNER/agentic-rca-mcp/actions/workflows/ci.yml/badge.svg)
+
 Open-source local-model prototype for generating Root Cause Analysis reports through a provider abstraction, with validated JSON output and PDF generation.
 
 ## Current Status
 
-Phase 4 quality layer complete (ambitious edition). The pipeline is agentic and
-multi-method, reachable from three entry points over a fully open stack.
+Phase 5 guardrails + containerisation complete (ambitious edition). The
+pipeline is agentic, multi-method, hardened against bad input/output/missing
+dependencies, and runs in Docker with CI.
+
+- Sanitizer (`sanitizer.py`): secret redaction, per-field length limits, and
+  prompt-injection delimiting run inside `RCAAgent.run`, so MCP, CLI, and API
+  all pass through it before any prompt is built.
+- Structured errors: every failure (Ollama down, hosted 401, timeout,
+  malformed model output, invalid input) maps to a `StructuredError`
+  envelope - clients never see a stack trace.
+- Restricted writes: `OUTPUT_DIR` is the only writable artifact path,
+  enforced by `utils.enforce_output_path`.
+- Audit log: every invocation (success or failure) appends one JSONL line to
+  `outputs/audit_log.jsonl` with problem hash, method, models, confidence,
+  loop rounds, and sanitizer findings.
+- Docker: `docker compose up` runs the FastAPI service next to an Ollama
+  container; PDFs land on the mounted `./outputs` volume.
+- CI: ruff lint + pytest + a container build on every push.
+
+Phase 4 quality layer (tagged `quality-layer-complete`). The pipeline is
+agentic and multi-method, reachable from three entry points over a fully open
+stack.
 
 - Agent loop live: deterministic internal tools (deepening-verifier,
   symptom-vs-cause checker, anti-blame checker) drive a bounded
@@ -111,6 +133,44 @@ eval/results.json
 ```powershell
 pytest
 ```
+
+Lint with:
+
+```powershell
+ruff check .
+```
+
+## Run In Docker
+
+```powershell
+docker compose up --build -d
+docker compose exec ollama ollama pull qwen2.5:7b
+docker compose exec ollama ollama pull llama3.2:latest
+# API: http://localhost:8000/rca
+# CLI inside the container; the PDF lands in ./outputs on the host:
+docker compose run --rm app python -m agentic_rca "checkout requests time out after a database migration"
+```
+
+The compose file passes `HOSTED_OPEN_BASE_URL` / `HOSTED_OPEN_API_KEY` /
+`HOSTED_OPEN_MODEL` through from the host shell (or a local `.env`), so the
+hosted-open path works in the container without editing the file.
+
+## Security & Guardrails
+
+Each guardrail maps to a recognized risk category (OWASP Top 10 for LLM
+Applications / NIST AI RMF):
+
+| Guardrail | Where | Concept |
+| --- | --- | --- |
+| Prompt-injection delimiting: untrusted fields fenced as data; forged delimiters stripped | `sanitizer.py`, `methods/base.py` | OWASP LLM01 Prompt Injection |
+| Secret redaction before any model call or disk write | `sanitizer.py` | OWASP LLM06 Sensitive Information Disclosure |
+| Length limits on every input field | `sanitizer.py` | OWASP LLM10 Unbounded Consumption / DoS |
+| Strict schema validation of model output, bounded retries, then a structured error | providers + `schemas.py` + `utils.py` | OWASP LLM05 Improper Output Handling |
+| Anti-blame cap: unresolved blame language forces confidence to `low` | `agent/orchestrator.py` | OWASP LLM09 Misinformation / NIST AI RMF Safe |
+| Restricted file writes: only `OUTPUT_DIR` is writable | `utils.enforce_output_path` | OWASP LLM08 Excessive Agency (least privilege) |
+| JSONL audit log of every invocation (hash, models, rounds, outcome) | `utils.append_audit_record` | NIST AI RMF Govern/Map (accountability, traceability) |
+| Clean structured errors, no stack traces or raw provider payloads to clients | `utils.classify_exception` | OWASP API security: no internal detail leakage |
+| Bounded agent loop (max rounds + global time budget + deterministic fallback) | `agent/orchestrator.py` | OWASP LLM08 Excessive Agency |
 
 ## Notes
 
