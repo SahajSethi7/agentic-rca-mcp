@@ -782,3 +782,17 @@ git tag phase-2-complete
 ```
 
 Only tag after the commit exists so the tag points to the completed implementation.
+
+## Post-Retrofit Note: Causal Chain Length
+
+After the ambitious-edition retrofit discussion, the active code no longer requires exactly five why entries. The original Phase 2 implementation used exactly five entries to de-risk structured output, but the production-oriented schema now accepts 3-7 causal steps.
+
+Current rule:
+
+```text
+why_chain length: 3-7
+indexes: consecutive, starting at 1
+quality target: stop when a durable root/system/process cause is reached
+```
+
+The historical Phase 2 samples with five entries remain valid.

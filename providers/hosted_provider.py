@@ -1,19 +1,41 @@
-"""Placeholder for hosted-open model providers.
-
-Phase 2 focuses on the local Ollama implementation. This module exists so the
-provider boundary is explicit when hosted-open endpoints are added later.
-"""
+"""Hosted-open RCA provider using an OpenAI-compatible API."""
 
 from __future__ import annotations
 
+from time import perf_counter
+
+import instructor
+from openai import OpenAI
+
+from config import Settings, get_settings
+from prompts import build_messages
 from providers.base import RCAProvider
 from schemas import RCAInput, RCAReport
 
 
 class HostedProvider(RCAProvider):
+    """Provider for Groq/Together/OpenRouter-style OpenAI-compatible endpoints."""
+
+    def __init__(self, settings: Settings | None = None, model: str | None = None) -> None:
+        self.settings = settings or get_settings()
+        self._model = model or self.settings.hosted_model or self.settings.validation_model
+        if not self.settings.hosted_base_url:
+            raise ValueError("HOSTED_OPEN_BASE_URL is required for HostedProvider")
+        if not self.settings.hosted_api_key:
+            raise ValueError("HOSTED_OPEN_API_KEY is required for HostedProvider")
+        if not self._model:
+            raise ValueError("HOSTED_OPEN_MODEL or VALIDATION_MODEL is required for HostedProvider")
+
+        openai_client = OpenAI(
+            base_url=self.settings.hosted_base_url,
+            api_key=self.settings.hosted_api_key,
+            timeout=self.settings.request_timeout_seconds,
+        )
+        self.client = instructor.from_openai(openai_client, mode=instructor.Mode.JSON)
+
     @property
     def model(self) -> str:
-        return "hosted-open-placeholder"
+        return self._model or "hosted-open"
 
     def generate(
         self,
@@ -22,4 +44,23 @@ class HostedProvider(RCAProvider):
         prompt_version: str,
         strict_retry: bool = False,
     ) -> RCAReport:
-        raise NotImplementedError("Hosted providers are planned after local Ollama validation.")
+        started = perf_counter()
+        report = self.client.chat.completions.create(
+            model=self.model,
+            response_model=RCAReport,
+            max_retries=self.settings.max_retries,
+            temperature=0,
+            messages=build_messages(
+                rca_input,
+                prompt_version=prompt_version,
+                strict_retry=strict_retry,
+            ),
+        )
+        latency = round(perf_counter() - started, 3)
+        return report.model_copy(
+            update={
+                "source_model": self.model,
+                "prompt_version": prompt_version,
+                "latency_seconds": latency,
+            }
+        )

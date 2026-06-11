@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-rca-mcp"
+version = "0.1.0"
+description = "Open-model Agentic RCA MCP server"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi",
+  "fastmcp",
+  "instructor",
+  "mcp",
+  "ollama",
+  "openai",
+  "pydantic",
+  "python-dotenv",
+  "pytest",
+  "reportlab",
+  "uvicorn",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

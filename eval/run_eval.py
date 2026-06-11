@@ -27,6 +27,18 @@ INCIDENTS = [
     "CPU usage spikes after enabling a new analytics endpoint.",
 ]
 
+
+def load_golden_incidents(path: Path = REPO_ROOT / "eval" / "golden_set.jsonl") -> list[str]:
+    """Load incident prompts from the golden set, falling back to built-ins."""
+    if not path.exists():
+        return INCIDENTS
+    incidents: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        incidents.append(json.loads(line)["problem"])
+    return incidents or INCIDENTS
+
 PROCESS_TERMS = {
     "process",
     "configuration",
@@ -71,7 +83,13 @@ def _tokens(text: str) -> set[str]:
 def score_report(report: RCAReport, latency_seconds: float) -> tuple[float, float, float, float, float, float]:
     why_answers = [entry.answer for entry in report.why_chain]
     unique_answers = len({answer.lower() for answer in why_answers})
-    why_score = 2.0 if len(report.why_chain) == 5 and unique_answers == 5 else 1.0
+    chain_length = len(report.why_chain)
+    indexes = [entry.index for entry in report.why_chain]
+    expected_indexes = list(range(1, chain_length + 1))
+    length_ok = 3 <= chain_length <= 7
+    indexes_ok = indexes == expected_indexes
+    unique_enough = unique_answers == chain_length
+    why_score = 2.0 if length_ok and indexes_ok and unique_enough else 1.0
 
     answer_lengths = [len(answer.split()) for answer in why_answers]
     gets_deeper = answer_lengths[-1] >= max(4, answer_lengths[0] - 2)
@@ -98,11 +116,11 @@ def score_report(report: RCAReport, latency_seconds: float) -> tuple[float, floa
     return why_score, deepening_score, root_cause_score, recommendation_score, latency_score, total
 
 
-def evaluate_model(model: str, settings: Settings) -> list[EvalRow]:
+def evaluate_model(model: str, settings: Settings, incidents: list[str]) -> list[EvalRow]:
     provider = OllamaProvider(settings=settings, model=model)
     rows: list[EvalRow] = []
 
-    for incident in INCIDENTS:
+    for incident in incidents:
         started = perf_counter()
         try:
             report = generate_rca(incident, provider=provider, settings=settings)
@@ -224,7 +242,8 @@ def main() -> None:
 
     settings = get_settings()
     models = tuple(args.models) if args.models else settings.eval_models
-    rows = [row for model in models for row in evaluate_model(model, settings)]
+    incidents = load_golden_incidents()
+    rows = [row for model in models for row in evaluate_model(model, settings, incidents)]
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

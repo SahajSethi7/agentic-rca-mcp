@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -20,6 +20,10 @@ class RCAInput(BaseModel):
         default=None,
         description="Optional supporting facts such as logs, timeline, alerts, or recent changes.",
     )
+    method: Literal["five_why", "fishbone", "fault_tree"] = Field(
+        default="five_why",
+        description="RCA method to use. five_why remains the canonical default.",
+    )
 
     @field_validator("problem_statement", "context")
     @classmethod
@@ -32,11 +36,11 @@ class RCAInput(BaseModel):
 
 
 class WhyEntry(BaseModel):
-    """One step in a 5 Whys chain."""
+    """One step in a causal why chain."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    index: int = Field(ge=1, le=5, description="Position in the 5 Whys chain.")
+    index: int = Field(ge=1, le=7, description="Position in the causal why chain.")
     question: str = Field(
         min_length=8,
         description="The why question asked at this step.",
@@ -58,9 +62,9 @@ class RCAReport(BaseModel):
         description="Brief executive summary of the incident and likely cause.",
     )
     why_chain: list[WhyEntry] = Field(
-        min_length=5,
-        max_length=5,
-        description="Exactly five deepening why entries.",
+        min_length=3,
+        max_length=7,
+        description="Three to seven deepening why entries, stopping at a durable root cause.",
     )
     root_cause: str = Field(
         min_length=20,
@@ -75,6 +79,22 @@ class RCAReport(BaseModel):
         min_length=2,
         max_length=6,
         description="Concrete mitigations that address the root cause.",
+    )
+    assumptions: list[str] = Field(
+        default_factory=list,
+        description="Assumptions made because the provided context was incomplete.",
+    )
+    evidence_needed: list[str] = Field(
+        default_factory=list,
+        description="Evidence that would improve or confirm the RCA.",
+    )
+    validation_notes: list[str] = Field(
+        default_factory=list,
+        description="Critique or validation observations from the agent loop or validation model.",
+    )
+    method_detail: dict[str, Any] | None = Field(
+        default=None,
+        description="Method-specific payload for Fishbone, Fault Tree, or future RCA methods.",
     )
     confidence: Literal["low", "medium", "high"] = Field(
         description="Confidence level based on the available evidence.",
@@ -93,7 +113,7 @@ class RCAReport(BaseModel):
         description="Provider latency; set by the provider.",
     )
 
-    @field_validator("contributing_factors", "recommendations")
+    @field_validator("contributing_factors", "recommendations", "assumptions", "evidence_needed", "validation_notes")
     @classmethod
     def reject_blank_items(cls, values: list[str]) -> list[str]:
         if any(not item.strip() for item in values):
@@ -103,6 +123,30 @@ class RCAReport(BaseModel):
     @model_validator(mode="after")
     def validate_why_indexes(self) -> "RCAReport":
         indexes = [entry.index for entry in self.why_chain]
-        if indexes != [1, 2, 3, 4, 5]:
-            raise ValueError("why_chain indexes must be exactly [1, 2, 3, 4, 5]")
+        expected = list(range(1, len(self.why_chain) + 1))
+        if indexes != expected:
+            raise ValueError(f"why_chain indexes must be consecutive: {expected}")
         return self
+
+
+class CritiqueIssue(BaseModel):
+    """One issue identified during an agent critique pass."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    check: str = Field(description="Name of the critique check that produced the issue.")
+    severity: Literal["low", "medium", "high"] = Field(description="Issue severity.")
+    message: str = Field(min_length=5, description="Human-readable critique finding.")
+
+
+class CritiqueResult(BaseModel):
+    """Bounded critique result used by the future agent loop."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    issues: list[CritiqueIssue] = Field(default_factory=list)
+    revised: bool = Field(
+        default=False,
+        description="Whether the RCA was revised after this critique.",
+    )
+    validation_notes: list[str] = Field(default_factory=list)

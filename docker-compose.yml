@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./outputs:/app/outputs
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  ollama:

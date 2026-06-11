@@ -4,15 +4,16 @@ Open-source local-model prototype for generating Root Cause Analysis reports thr
 
 ## Current Status
 
-Phase 2 complete from an implementation perspective:
+Phase 3 MVP frozen (ambitious edition): the full pipeline runs end to end from
+three entry points over a fully open stack.
 
-- Pydantic schemas for RCA input, 5 Whys entries, and full RCA reports.
-- Swappable provider interface in `providers/`.
-- Local Ollama provider using Instructor for schema-validated output.
-- Versioned prompts in `prompts.py`; current version is `v2`.
-- `generate_rca(problem, context=None)` orchestration in `rca_agent.py`.
-- Local model eval runner in `eval/run_eval.py`.
-- Schema unit tests in `tests/test_schemas.py`.
+- `server.py`: FastMCP server exposing `generate_rca_report` (problem -> agent -> open model -> validated JSON -> PDF on disk).
+- `agent/orchestrator.py`: bounded plan/generate/critique/revise orchestrator seam (critique/revise are no-ops until Phase 4).
+- `pdf_generator.py`: ReportLab Platypus report with section dividers, 5-Why table, footer page numbers, and an AI disclaimer.
+- `api.py`: FastAPI service with `POST /rca` and `GET /health` calling the same orchestrator.
+- `agentic_rca/`: CLI package so `python -m agentic_rca "problem"` runs the pipeline.
+- `.vscode/mcp.json`: VS Code MCP wiring pointing at `server.py` with the venv interpreter and `.env`.
+- Phase 1-2 core preserved: schemas, providers (Ollama + hosted-open), versioned prompts, eval runner, golden set.
 
 ## Setup
 
@@ -38,6 +39,29 @@ LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434/v1
 RCA_MODEL=qwen2.5:7b
 RCA_PROMPT_VERSION=v2
+```
+
+## Run The MCP Server
+
+```powershell
+python server.py
+```
+
+Or let VS Code launch it through `.vscode/mcp.json` and invoke the
+`generate_rca_report` tool from chat. Outputs land in `outputs/Agentic_RCA.pdf`
+and `outputs/Agentic_RCA.json`.
+
+## Run The CLI
+
+```powershell
+python -m agentic_rca "checkout requests time out after a database migration"
+```
+
+## Run The FastAPI Service
+
+```powershell
+uvicorn api:app --reload
+curl -X POST http://127.0.0.1:8000/rca -H "Content-Type: application/json" -d '{"problem_statement": "login API returns 500 after deploy"}'
 ```
 
 ## Run The Core Engine

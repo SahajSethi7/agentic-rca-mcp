@@ -9,8 +9,8 @@ Maximum score per incident: 10 points.
 | Criterion | Points | How to score |
 | --- | ---: | --- |
 | Valid schema | 2 | `RCAReport` validation succeeds with no repair outside Instructor retries. |
-| Five distinct whys | 2 | The report has exactly five why entries, indexes 1-5, and the answers are not duplicates. |
-| Deepening causal chain | 2 | The whys move from symptom to immediate cause to system/process/configuration cause. |
+| Causal chain quality | 2 | The report has 3-7 coherent, non-duplicative why-style causal steps with consecutive indexes. The chain stops at a durable cause instead of padding to an arbitrary count. |
+| Deepening causal chain | 2 | The steps move from symptom to immediate cause to system/process/configuration cause. |
 | Root cause quality | 2 | Root cause is not just a symptom; it identifies a durable cause that can be fixed. |
 | Recommendations | 1 | Recommendations are concrete and address the root cause. |
 | Latency | 1 | 1 point for <= 45 seconds, 0.5 for <= 90 seconds, 0 for slower or failed. |

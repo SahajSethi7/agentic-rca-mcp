@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from schemas import RCAInput, RCAReport
+from schemas import CritiqueIssue, CritiqueResult, RCAInput, RCAReport
 
 
 def valid_report_dict() -> dict:
@@ -50,12 +50,29 @@ def valid_report_dict() -> dict:
     }
 
 
+def why_entry(index: int) -> dict:
+    return {
+        "index": index,
+        "question": f"Why did causal step {index} happen?",
+        "answer": f"Causal step {index} deepens the analysis toward a durable process cause.",
+    }
+
+
 def test_valid_rca_input_accepts_problem_and_context() -> None:
     parsed = RCAInput(
         problem_statement="Login API returns HTTP 500 after deploy.",
         context="Deployment happened 10 minutes before the first alert.",
     )
     assert parsed.problem_statement.startswith("Login API")
+    assert parsed.method == "five_why"
+
+
+def test_rca_input_accepts_supported_method() -> None:
+    parsed = RCAInput(
+        problem_statement="Checkout requests time out after migration.",
+        method="fishbone",
+    )
+    assert parsed.method == "fishbone"
 
 
 def test_rca_input_rejects_short_problem() -> None:
@@ -69,9 +86,30 @@ def test_valid_rca_report_accepts_complete_shape() -> None:
     assert parsed.why_chain[0].index == 1
 
 
-def test_rca_report_rejects_wrong_why_chain_length() -> None:
+def test_rca_report_accepts_three_step_causal_chain() -> None:
     payload = valid_report_dict()
-    payload["why_chain"] = payload["why_chain"][:4]
+    payload["why_chain"] = [why_entry(index) for index in range(1, 4)]
+    parsed = RCAReport.model_validate(payload)
+    assert len(parsed.why_chain) == 3
+
+
+def test_rca_report_accepts_seven_step_causal_chain() -> None:
+    payload = valid_report_dict()
+    payload["why_chain"] = [why_entry(index) for index in range(1, 8)]
+    parsed = RCAReport.model_validate(payload)
+    assert len(parsed.why_chain) == 7
+
+
+def test_rca_report_rejects_too_short_why_chain() -> None:
+    payload = valid_report_dict()
+    payload["why_chain"] = [why_entry(index) for index in range(1, 3)]
+    with pytest.raises(ValidationError):
+        RCAReport.model_validate(payload)
+
+
+def test_rca_report_rejects_too_long_why_chain() -> None:
+    payload = valid_report_dict()
+    payload["why_chain"] = [why_entry(index) for index in range(1, 9)]
     with pytest.raises(ValidationError):
         RCAReport.model_validate(payload)
 
@@ -88,3 +126,27 @@ def test_rca_report_rejects_missing_required_fields() -> None:
     del payload["root_cause"]
     with pytest.raises(ValidationError):
         RCAReport.model_validate(payload)
+
+
+def test_rca_report_accepts_method_detail_and_agent_fields() -> None:
+    payload = valid_report_dict()
+    payload["method_detail"] = {"method": "five_why"}
+    payload["assumptions"] = ["No logs were supplied."]
+    payload["evidence_needed"] = ["Deployment logs"]
+    payload["validation_notes"] = ["No critique run yet."]
+    parsed = RCAReport.model_validate(payload)
+    assert parsed.method_detail == {"method": "five_why"}
+
+
+def test_critique_result_accepts_issues() -> None:
+    parsed = CritiqueResult(
+        issues=[
+            CritiqueIssue(
+                check="symptom_vs_cause",
+                severity="medium",
+                message="Root cause may restate the symptom.",
+            )
+        ],
+        revised=False,
+    )
+    assert parsed.issues[0].check == "symptom_vs_cause"
