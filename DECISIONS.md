@@ -112,3 +112,79 @@ The Dockerfile's default command is the FastAPI service (the long-running surfac
 ## Phase 4 Live Verification Refresh
 
 `VALIDATION_MODEL` is set locally to `llama3.2:latest`, while generation remains on `qwen2.5:7b`. The two Phase 4 method sample files now contain live Ollama output rather than hand-written renderer fixtures, and validation notes are intentionally preserved even when they criticize the report. The Fishbone live run exposed a method-consistency blind spot, so the deterministic critique layer now checks Fishbone selected-cause/root-cause alignment and Fault-Tree shape limits before revision. Hosted-open validation is still a credential gap, not a code gap: `HostedProvider` is implemented, but `HOSTED_OPEN_BASE_URL`, `HOSTED_OPEN_API_KEY`, and `HOSTED_OPEN_MODEL` are not present in this workspace or process environment.
+
+## Phase 6 Web UI + HTML Report (Days 36-38)
+
+### HTML report as a shared, standalone artifact
+`html_generator.build_html` renders a validated `RCAReport` into one
+self-contained, styled HTML document that mirrors the PDF section order and
+every Phase 4 quality field. The pipeline now writes `Agentic_RCA.html` beside
+the PDF/JSON. The same document is what the web UI embeds inline, so the saved
+file, the on-screen report, and a printed page are always identical — one
+rendering path, no divergence.
+
+### Inline report via iframe srcdoc
+
+> Superseded by the React rebuild (see "Phase 6 (revision) — React
+> front-end" below): the report is now rendered as React components from the
+> full report JSON, not embedded via an iframe.
+The web UI shows the finished report by setting an `<iframe srcdoc>` to the
+exact standalone HTML the pipeline saves, rather than re-implementing the
+report layout in JavaScript. This guarantees the inline view equals the
+downloadable file and keeps Mermaid scoped to its own document. The iframe is
+same-origin, so the page auto-sizes it to the report height.
+
+### Live agent stages: SSE first, polling fallback
+`RCAAgent.run` gained an optional `on_event(stage, info)` observer (advisory
+only — a misbehaving observer can never affect a run). The web layer runs each
+analysis as a background job, records stage events in an append-only,
+replayable log, and streams them as Server-Sent Events; a `/ui/status` polling
+endpoint is the automatic fallback when SSE is blocked. The append-only log
+means a reconnecting client never misses earlier events.
+
+### Self-contained SPA, no new dependencies
+The UI is a single `web/index.html` (HTML + CSS + JS inline) plus a thin
+FastAPI router — no Jinja templates, no build step, no client framework, no
+extra runtime dependency beyond FastAPI/Starlette. This honours the roadmap's
+"web UI is a thin client / kill-list" discipline: the UI is a renderer for the
+pipeline that already exists, not a second application.
+
+### Mermaid 5-Why tree as a graceful enhancement
+The Mermaid tree (first kill-list item) is purely additive: the always-present
+Why-chain stepper is the readable source of truth, and the tree degrades to a
+short note if the diagram library cannot load offline. User text is escaped for
+both HTML and Mermaid label contexts.
+
+### Method comparison
+A single job can hold one or two runs. The Day-38 compare toggle runs the same
+problem through two methods sequentially and renders them side by side, each
+with its own stepper, confidence chip, report, and PDF download — reusing the
+exact same per-run machinery as a single analysis.
+
+## Phase 6 (revision) — React front-end
+
+The Phase 6 UI was rebuilt as a React + TypeScript + Tailwind single-page app
+(Vite), replacing the original self-contained vanilla `web/index.html`. The
+motivation was a request for a conventional, component-based front-end stack.
+
+What changed and what did not:
+
+- The FastAPI backend is unchanged in shape: the same `/ui/analyze`, SSE
+  `/ui/events`, polling `/ui/status`, and artifact-download routes power the app.
+  `api.py` now serves the built React bundle (`frontend/dist`) at `/` and mounts
+  the hashed assets under `/assets`.
+- The `result` event now carries the **full** `RCAReport` JSON
+  (`report.model_dump(mode="json")`) instead of a chrome summary plus a
+  server-rendered HTML string. The report is rendered entirely as React
+  components (hero, why-stepper, Fishbone, Fault-Tree, root-cause callout,
+  lists, validation notes), so the UI no longer depends on an embedded iframe.
+- `html_generator.build_html` is retained: it still produces the saved
+  `Agentic_RCA.html` and backs the "Open standalone" link and the PDF's HTML
+  sibling. Report layout therefore lives in two places (Python for the saved
+  file, React for the live UI) — an accepted trade-off for a true React UI.
+- Mermaid is loaded from a CDN (a `<script>` in the app shell) rather than
+  bundled, to keep the build small; the `MermaidTree` component renders the
+  5-Why tree and degrades to a note if the library is unavailable.
+- Styling uses Tailwind with the same indigo "incident console" palette; the
+  prebuilt `frontend/dist` is committed so `uvicorn api:app` runs the UI without
+  a Node toolchain, while `npm run dev` / `npm run build` support development.

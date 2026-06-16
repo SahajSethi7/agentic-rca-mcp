@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: #1e2330;
+  background:
+    radial-gradient(1200px 600px at 100% -10%, #e9e7fb 0, transparent 55%),
+    radial-gradient(1000px 500px at -10% 0%, #e6f0fb 0, transparent 50%),
+    #eef0f7;
+  background-attachment: fixed;
+}
+
+@layer utilities {
+  .hero-gradient { background: linear-gradient(135deg, #4f46e5 0%, #6d5ef0 48%, #8b7bf7 100%); }
+  .pulse-ring { animation: pulsering 1.3s ease-in-out infinite; }
+}
+@keyframes pulsering {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(79,70,229,.18); }
+  50% { box-shadow: 0 0 0 7px rgba(79,70,229,.07); }
+}
+.report-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+.report-scroll::-webkit-scrollbar-thumb { background: #d7dbea; border-radius: 8px; }

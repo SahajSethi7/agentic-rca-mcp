@@ -6,6 +6,12 @@ Open-source local-model prototype for generating Root Cause Analysis reports thr
 
 ## Current Status
 
+Phase 6 web UI + HTML report (ambitious edition, Days 36-38). The pipeline now
+has a fourth entry point: a React (TypeScript + Tailwind, Vite) web UI over the
+FastAPI service with a live agent-stage status line, the RCA rendered as React
+components, a Download-PDF button, and a two-method comparison. Every validated RCA is also saved as a styled
+`Agentic_RCA.html` (with an optional Mermaid 5-Why tree) beside the PDF/JSON.
+
 Phase 5 guardrails + containerisation complete (ambitious edition). The
 pipeline is agentic, multi-method, hardened against bad input/output/missing
 dependencies, and runs in Docker with CI.
@@ -108,6 +114,36 @@ runs with `qwen2.5:7b` and validated by `llama3.2:latest`.
 uvicorn api:app --reload
 curl -X POST http://127.0.0.1:8000/rca -H "Content-Type: application/json" -d '{"problem_statement": "login API returns 500 after deploy"}'
 ```
+
+## Run The Web UI
+
+The web UI is a React + TypeScript + Tailwind app (`frontend/`), built with Vite,
+that talks to the FastAPI service. A production build ships in `frontend/dist`,
+so the simplest path is just to run the API and open the browser:
+
+```powershell
+uvicorn api:app --reload
+# then open http://127.0.0.1:8000/
+```
+
+To develop or rebuild the UI:
+
+```powershell
+cd frontend
+npm install
+npm run build   # production build, served by FastAPI at /
+npm run dev     # hot-reload dev server on :5173 (proxies /ui, /rca, /health to :8000)
+```
+
+The app provides a problem form with method/severity selectors, a live
+agent-stage status line (planning -> generating -> critiquing -> revising ->
+validating) streamed over SSE with a polling fallback, the finished RCA rendered
+as React components, a Download-PDF button, and a compare-two-methods toggle that
+runs the same problem through two methods side by side. See
+`docs/web_ui_guide.md` for a full walkthrough. The UI shares the Phase 5
+guardrails - sanitization, structured errors, and the audit log all live in the
+pipeline (`web/jobs.py` runs each analysis through `RCAAgent`), so the web
+surface cannot bypass them.
 
 ## Run The Core Engine
 

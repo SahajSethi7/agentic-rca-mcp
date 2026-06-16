@@ -102,6 +102,7 @@ def test_run_rca_pipeline_writes_artifacts_and_returns_summary(
     json_path = Path(result["json_path"])
     assert json_path.exists()
     assert json.loads(json_path.read_text(encoding="utf-8"))["method"] == "five_why"
+    assert Path(result["html_path"]).exists()
     assert result["source_model"] == "stub-model"
 
 

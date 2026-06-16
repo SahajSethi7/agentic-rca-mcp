@@ -5,13 +5,18 @@ findings are fed back to the model through a revise prompt for at most
 ``max_revise_rounds`` rounds inside a global time budget, with a deterministic
 fallback to the last valid report on any failure. An optional final validation
 pass on a (possibly stronger) reviewer model sets confidence and notes.
+
+Phase 6: ``run`` accepts an optional ``on_event`` observer that receives each
+agent stage (planning / generating / critiquing / revising / validating /
+done). It is purely advisory - the web UI uses it to show a live status line -
+and a misbehaving observer can never affect a run.
 """
 
 from __future__ import annotations
 
 import logging
 from time import monotonic
-from typing import Any
+from typing import Any, Callable
 
 from agent.tools import run_all_checks
 from config import Settings, get_settings
@@ -23,6 +28,8 @@ from schemas import CritiqueResult, RCAInput, RCAReport
 from validation import validate_rca
 
 logger = logging.getLogger("agentic_rca.orchestrator")
+
+StageCallback = Callable[[str, "dict[str, Any]"], None]
 
 
 class RCAAgent:
@@ -108,7 +115,20 @@ class RCAAgent:
         method: str = "five_why",
         severity: str | None = None,
         system_area: str | None = None,
+        on_event: StageCallback | None = None,
     ) -> RCAReport:
+        def emit(stage: str, **info: Any) -> None:
+            """Report the current agent stage to an optional observer (web UI).
+
+            Best-effort: a misbehaving observer must never break a run.
+            """
+            if on_event is None:
+                return
+            try:
+                on_event(stage, info)
+            except Exception:  # pragma: no cover - observer is advisory only
+                logger.debug("on_event observer raised; ignoring.", exc_info=True)
+
         deadline = monotonic() + self.timeout_seconds
         rca_input = RCAInput(
             problem_statement=problem,
@@ -131,7 +151,9 @@ class RCAAgent:
             "validation_model": None,
         }
 
+        emit("planning")
         self.plan(rca_input)
+        emit("generating")
         report = self.generate(rca_input)
         self.last_run_stats["generation_model"] = report.source_model
 
@@ -149,6 +171,7 @@ class RCAAgent:
                 )
                 break
 
+            emit("critiquing", round=rounds + 1)
             critique = self.critique(report)
             if not critique.issues:
                 logger.info("Critique round %d: clean, stopping loop.", rounds + 1)
@@ -160,6 +183,7 @@ class RCAAgent:
                 len(critique.issues),
                 [issue.check for issue in critique.issues],
             )
+            emit("revising", round=rounds + 1)
             try:
                 revised = self.revise(rca_input, report, critique)
             except Exception:
@@ -208,6 +232,7 @@ class RCAAgent:
             )
 
         if self.settings.validation_enabled and monotonic() < deadline:
+            emit("validating")
             report = validate_rca(
                 report,
                 fallback_provider=self._provider,
@@ -244,4 +269,5 @@ class RCAAgent:
             )
 
         self.last_run_stats["confidence"] = report.confidence
+        emit("done", confidence=report.confidence)
         return report

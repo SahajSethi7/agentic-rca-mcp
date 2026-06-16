@@ -8,3 +8,8 @@ __pycache__/
 .DS_Store
 scratch/
 .sync_probe
+
+# React frontend
+frontend/node_modules/
+frontend/.vite/
+frontend/install.log

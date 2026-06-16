@@ -1,8 +1,8 @@
 """FastMCP server exposing the Agentic RCA pipeline.
 
 The MCP tool runs the full pipeline: plain-English problem statement ->
-orchestrator (agent loop) -> open model -> validated RCAReport -> PDF + JSON
-on disk. The tool returns the artifact paths plus a short summary so the
+orchestrator (agent loop) -> open model -> validated RCAReport -> PDF + JSON +
+HTML on disk. The tool returns the artifact paths plus a short summary so the
 calling client can answer immediately without re-reading the files.
 """
 
@@ -16,6 +16,7 @@ from fastmcp import FastMCP
 
 from agent.orchestrator import RCAAgent
 from config import get_settings
+from html_generator import build_html
 from pdf_generator import build_pdf
 from utils import (
     PipelineError,
@@ -34,6 +35,7 @@ mcp = FastMCP("agentic-rca")
 
 PDF_NAME = "Agentic_RCA.pdf"
 JSON_NAME = "Agentic_RCA.json"
+HTML_NAME = "Agentic_RCA.html"
 
 
 def run_rca_pipeline(
@@ -44,13 +46,14 @@ def run_rca_pipeline(
     system_area: str | None = None,
     entry_point: str = "mcp",
 ) -> dict[str, Any]:
-    """Run the full RCA pipeline and write PDF + JSON artifacts.
+    """Run the full RCA pipeline and write PDF + JSON + HTML artifacts.
 
     Shared by the MCP tool and the CLI so every entry point exercises the
     same orchestrator path. Phase 5: failures are converted to a clean
     ``PipelineError`` carrying a ``StructuredError`` (never a stack trace),
     writes are restricted to OUTPUT_DIR, and every invocation - success or
-    failure - lands in the JSONL audit log.
+    failure - lands in the JSONL audit log. Phase 6: a styled HTML report is
+    saved beside the PDF/JSON.
     """
     settings = get_settings()
     logger.info("RCA pipeline started (method=%s, provider=%s)", method, settings.provider)
@@ -74,6 +77,9 @@ def run_rca_pipeline(
         )
         json_path = enforce_output_path(output_dir / JSON_NAME, settings)
         json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+
+        html_path = enforce_output_path(output_dir / HTML_NAME, settings)
+        html_path.write_text(build_html(report), encoding="utf-8")
     except Exception as exc:
         structured = classify_exception(exc)
         logger.exception("RCA pipeline failed (%s)", structured.error_type)
@@ -118,6 +124,7 @@ def run_rca_pipeline(
     return {
         "pdf_path": str(pdf_path.resolve()),
         "json_path": str(json_path.resolve()),
+        "html_path": str(html_path.resolve()),
         "summary": report.summary,
         "root_cause": report.root_cause,
         "confidence": report.confidence,
@@ -143,7 +150,7 @@ def generate_rca_report(
         severity: Optional incident severity - low, medium, high, or critical.
         system_area: Optional affected area, e.g. 'payments' or 'auth'.
 
-    Returns paths to the generated PDF and JSON plus a short summary. On
+    Returns paths to the generated PDF, JSON and HTML plus a short summary. On
     failure, returns a structured error object (status/error_type/message)
     instead of raising, so the calling client never sees a stack trace.
     """

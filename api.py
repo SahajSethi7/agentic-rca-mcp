@@ -4,15 +4,21 @@ Phase 5: the web surface gets the same guardrails as MCP and the CLI -
 sanitization happens inside ``RCAAgent.run`` (so the endpoint cannot bypass
 it), failures map to a structured error body with a meaningful HTTP status,
 and every invocation is audit-logged.
+
+Phase 6: the React single-page app (``frontend/``) is served from this same
+app, and its job/streaming routes (``web/``) are mounted here, so the browser
+shares the identical guarded pipeline.
 """
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from agent.orchestrator import RCAAgent
 from config import get_settings
@@ -28,6 +34,37 @@ from utils import (
 logger = logging.getLogger("agentic_rca.api")
 
 app = FastAPI(title="Agentic RCA MCP Server")
+
+# Phase 6: mount the web UI job/streaming routes on this same app, so the
+# browser inherits the guarded pipeline (sanitization, structured errors, audit
+# log) and cannot bypass it.
+from web.routes import router as web_router  # noqa: E402
+
+app.include_router(web_router)
+
+# Serve the built React app (frontend/dist). The hashed JS/CSS live under
+# /assets; "/" returns the SPA shell. If the app has not been built yet, fall
+# back to the legacy static page, then to a helpful message.
+_ROOT = Path(__file__).resolve().parent
+_FRONTEND_DIST = _ROOT / "frontend" / "dist"
+_LEGACY_INDEX = _ROOT / "web" / "index.html"
+
+if (_FRONTEND_DIST / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=_FRONTEND_DIST / "assets"), name="assets")
+
+
+@app.get("/", response_class=HTMLResponse)
+def index() -> HTMLResponse:
+    built = _FRONTEND_DIST / "index.html"
+    if built.exists():
+        return HTMLResponse(built.read_text(encoding="utf-8"))
+    if _LEGACY_INDEX.exists():
+        return HTMLResponse(_LEGACY_INDEX.read_text(encoding="utf-8"))
+    return HTMLResponse(
+        "<h1>Agentic RCA</h1><p>The web UI is not built yet. Run: "
+        "<code>cd frontend &amp;&amp; npm install &amp;&amp; npm run build</code></p>",
+        status_code=503,
+    )
 
 
 @app.exception_handler(PipelineError)
