@@ -23,6 +23,7 @@ from typing import Any, Callable
 
 from config import Settings, get_settings
 from html_generator import build_html
+from memory import build_memory_matches_workbook
 from pdf_generator import build_pdf
 from schemas import RCAReport
 from utils import append_audit_record, classify_exception, enforce_output_path
@@ -57,6 +58,7 @@ class RunState:
     pdf_path: Path | None = None
     html_path: Path | None = None
     json_path: Path | None = None
+    memory_matches_path: Path | None = None
     done: bool = False
 
 
@@ -170,6 +172,11 @@ class JobManager:
                 return
             run.stage = stage
             run.round = info.get("round")
+            details = {
+                key: info[key]
+                for key in ("detail", "substeps", "files", "rationale")
+                if key in info
+            }
             job.emit(
                 {
                     "type": "stage",
@@ -177,6 +184,7 @@ class JobManager:
                     "method": run.method,
                     "stage": stage,
                     "round": run.round,
+                    **details,
                 }
             )
 
@@ -197,7 +205,19 @@ class JobManager:
 
             run.stage = "rendering"
             job.emit(
-                {"type": "stage", "run": run.index, "method": run.method, "stage": "rendering"}
+                {
+                    "type": "stage",
+                    "run": run.index,
+                    "method": run.method,
+                    "stage": "rendering",
+                    "detail": "Generating report artifacts for the completed RCA.",
+                    "substeps": [
+                        "Preparing PDF report.",
+                        "Preparing standalone HTML report.",
+                        "Preparing JSON payload for UI/download.",
+                        "Preparing matching past RCA workbook.",
+                    ],
+                }
             )
 
             job_dir.mkdir(parents=True, exist_ok=True)
@@ -208,6 +228,27 @@ class JobManager:
             html_path.write_text(html_doc, encoding="utf-8")
             json_path = enforce_output_path(job_dir / f"{stem}.json", settings)
             json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+            memory_matches_path = build_memory_matches_workbook(
+                report.known_issue_matches,
+                enforce_output_path(job_dir / f"{stem}_matching_past_rcas.xlsx", settings),
+                current_problem=payload["problem_statement"],
+                min_score=settings.memory_min_score,
+            )
+            job.emit(
+                {
+                    "type": "stage",
+                    "run": run.index,
+                    "method": run.method,
+                    "stage": "rendering",
+                    "detail": "Report artifacts were written successfully.",
+                    "files": [
+                        pdf_path.name,
+                        html_path.name,
+                        json_path.name,
+                        memory_matches_path.name,
+                    ],
+                }
+            )
 
             run.report_summary = {
                 "problem": report.problem,
@@ -223,6 +264,7 @@ class JobManager:
             run.pdf_path = pdf_path
             run.html_path = html_path
             run.json_path = json_path
+            run.memory_matches_path = memory_matches_path
             run.done = True
             run.stage = "done"
 
@@ -252,6 +294,7 @@ class JobManager:
                     "pdf_url": f"{base}/report.pdf",
                     "html_url": f"{base}/report.html",
                     "json_url": f"{base}/report.json",
+                    "memory_xlsx_url": f"{base}/matching-past-rcas.xlsx",
                 }
             )
         except Exception as exc:  # noqa: BLE001 - every failure becomes a clean event

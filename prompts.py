@@ -35,10 +35,10 @@ PROMPT_V2 = {
         "Return only JSON that matches the schema. Do not include markdown fences. "
         "The why_chain must contain 3-7 causal steps that deepen from symptom to mechanism to process/system cause. "
         "Stop when a durable root cause is reached; do not pad the chain to hit an arbitrary count. "
-        "The final root_cause must not merely restate the symptom. Prefer causes such as "
-        "missing validation, weak release process, configuration drift, insufficient monitoring, "
-        "capacity planning gaps, unclear ownership, or missing regression coverage when supported "
-        "by the prompt. Recommendations must directly address the root cause."
+        "The final root_cause must not merely restate the symptom. Infer the root cause "
+        "from the supplied problem, context, and evidence only; when evidence is thin, "
+        "state assumptions instead of filling in a stock process-gap answer. "
+        "Recommendations must directly address the root cause."
     ),
     "user_template": (
         "Analyze the incident below using a why-style causal chain.\n\n"
@@ -71,7 +71,17 @@ V3_SYSTEM_CORE = (
     "4. Populate assumptions with anything you inferred because context was missing, and "
     "evidence_needed with the specific logs, metrics, or artifacts that would confirm or "
     "refute the analysis.\n"
-    "5. Set confidence honestly: high only when the context strongly supports the chain; "
+    "5. If past RCA memory records are present in the supporting context, use them as "
+    "supporting evidence only when the symptoms, service, or error signature are similar. "
+    "Do not copy a past fix blindly; cite the relevant incident IDs in validation_notes "
+    "or evidence_needed when they influenced the hypothesis.\n"
+    "6. Avoid vague root causes such as 'configuration issue', 'process gap', "
+    "'testing issue', or 'monitoring failure'. Name the concrete failed control, "
+    "component, artifact, config, schema, index, pool, route, secret, scheduler, "
+    "alert rule, or release gate.\n"
+    "7. Do not reuse a canned RCA from examples, tests, or past memory. Past memory can "
+    "support a hypothesis, but the final RCA must be reasoned from the current incident.\n"
+    "8. Set confidence honestly: high only when the context strongly supports the chain; "
     "low when you are mostly inferring."
 )
 
@@ -120,7 +130,8 @@ def build_messages(
         user_content += (
             "\n\nRetry instruction: your previous output was malformed or weak. "
             "Return valid JSON only. Ensure why_chain has 3-7 consecutive entries, "
-            "recommendations are specific, and root_cause is not a surface symptom."
+            "recommendations are specific, and root_cause is not a surface symptom. "
+            "Replace generic root causes with the exact failed mechanism or control."
         )
 
     return [
@@ -128,8 +139,8 @@ def build_messages(
         {
             "role": "user",
             "content": (
-                "Example pattern: symptom -> immediate failure -> missed detection -> "
-                "process gap -> durable root cause.\n\n"
+                "Causal depth pattern: symptom -> immediate failure -> missed detection -> "
+                "specific failed control/mechanism -> durable root cause.\n\n"
                 f"{user_content}"
             ),
         },
@@ -166,6 +177,8 @@ def build_revise_messages(
                 "Rules for the revision:\n"
                 "- fix each finding explicitly; do not merely reword\n"
                 "- deepen the why chain where the critique says it stalls\n"
+                "- make root_cause concrete enough that an engineer can identify the "
+                "failed control or component to inspect\n"
                 "- keep the same method and schema shape\n"
                 "- record what you changed in validation_notes (one short note per fix)"
             ),
@@ -191,6 +204,8 @@ def build_validation_messages(report: RCAReport) -> list[dict[str, str]]:
                 "- illogical or non-deepening why steps\n"
                 "- a symptom posing as the root cause\n"
                 "- recommendations that do not address the stated root cause\n"
+                "- vague root causes that do not name a specific failed mechanism, "
+                "component, artifact, or control\n"
                 "- blame aimed at an individual rather than a system or process\n"
                 "- overconfidence not supported by the available evidence\n\n"
                 f"RCA report JSON:\n{report.model_dump_json(indent=2)}\n\n"

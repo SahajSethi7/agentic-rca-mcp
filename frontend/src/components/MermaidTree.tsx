@@ -1,59 +1,78 @@
-import { useEffect, useRef, useState } from "react";
 import type { RCAReport } from "../types";
 
-let initialized = false;
+function FlowCard({
+  eyebrow,
+  title,
+  body,
+  tone = "default",
+}: {
+  eyebrow: string;
+  title: string;
+  body: string;
+  tone?: "default" | "root" | "problem";
+}) {
+  const styles = {
+    default: "border-slate-200 bg-white",
+    problem: "border-emerald-200 bg-emerald-50",
+    root: "border-command bg-command text-white",
+  }[tone];
+  const eyebrowStyle = tone === "root" ? "text-white/70" : "text-command-teal";
+  const titleStyle = tone === "root" ? "text-white" : "text-ink";
+  const bodyStyle = tone === "root" ? "text-white/86" : "text-ink-soft";
 
-function label(text: string, lim = 68): string {
-  let t = text.replace(/\s+/g, " ").trim();
-  if (t.length > lim) t = t.slice(0, lim - 1).trimEnd() + "…";
-  return t.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/[[\]{}()<>]/g, (c) => "&#" + c.charCodeAt(0) + ";");
+  return (
+    <div className={`rounded-lg border px-4 py-3 shadow-card ${styles}`}>
+      <p className={`text-[10.5px] font-black uppercase tracking-[0.13em] ${eyebrowStyle}`}>{eyebrow}</p>
+      <p className={`mt-1 text-[14px] font-black leading-5 ${titleStyle}`}>{title}</p>
+      <p className={`mt-1 text-[13px] leading-5 ${bodyStyle}`}>{body}</p>
+    </div>
+  );
+}
+
+function Connector() {
+  return (
+    <div className="flex items-center justify-center py-1.5" aria-hidden="true">
+      <div className="flex flex-col items-center">
+        <span className="h-5 w-px bg-slate-300" />
+        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-command-teal">
+          why
+        </span>
+        <span className="h-5 w-px bg-slate-300" />
+      </div>
+    </div>
+  );
 }
 
 export default function MermaidTree({ report }: { report: RCAReport }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    const m = window.mermaid;
-    if (!m) { setFailed(true); return; }
-    const lines = ["graph TD", `  P["🛈 Problem<br/>${label(report.problem, 70)}"]:::problem`];
-    let prev = "P";
-    report.why_chain.forEach((e) => {
-      const n = "W" + e.index;
-      lines.push(`  ${prev} -->|why?| ${n}["Why ${e.index}<br/>${label(e.answer, 72)}"]`);
-      prev = n;
-    });
-    lines.push(`  ${prev} --> RC["🎯 Root cause<br/>${label(report.root_cause, 80)}"]:::root`);
-    lines.push("  classDef problem fill:#eef2ff,stroke:#4f46e5,stroke-width:1.5px,color:#1e2330;");
-    lines.push("  classDef root fill:#0f172a,stroke:#0f172a,color:#ffffff;");
-
-    let cancelled = false;
-    try {
-      if (!initialized) {
-        m.initialize({
-          startOnLoad: false, theme: "base",
-          themeVariables: {
-            primaryColor: "#eef2ff", primaryBorderColor: "#4f46e5", primaryTextColor: "#1e2330",
-            lineColor: "#94a3b8", fontFamily: "Inter,system-ui,sans-serif",
-          },
-        });
-        initialized = true;
-      }
-      const id = "rca-tree-" + Math.random().toString(36).slice(2);
-      m.render(id, lines.join("\n"))
-        .then(({ svg }) => { if (!cancelled && ref.current) ref.current.innerHTML = svg; })
-        .catch(() => setFailed(true));
-    } catch { setFailed(true); }
-    return () => { cancelled = true; };
-  }, [report]);
-
-  if (failed) {
-    return <p className="px-1 py-2 text-[13px] text-slate-500">Interactive tree unavailable — the Why chain above shows the same path.</p>;
-  }
   return (
-    <div className="report-scroll overflow-auto rounded-xl border border-slate-200 p-4 text-center"
-      style={{ background: "repeating-linear-gradient(0deg,#fcfcff,#fcfcff 23px,#f4f5fb 24px)", minHeight: 80 }}>
-      <div ref={ref} />
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="mx-auto flex max-w-[860px] flex-col">
+        <FlowCard
+          tone="problem"
+          eyebrow="Problem"
+          title="Incident trigger"
+          body={report.problem}
+        />
+
+        {report.why_chain.map((entry) => (
+          <div key={entry.index}>
+            <Connector />
+            <FlowCard
+              eyebrow={`Why ${entry.index}`}
+              title={entry.question}
+              body={entry.answer}
+            />
+          </div>
+        ))}
+
+        <Connector />
+        <FlowCard
+          tone="root"
+          eyebrow="Root cause"
+          title="Durable cause to address"
+          body={report.root_cause}
+        />
+      </div>
     </div>
   );
 }

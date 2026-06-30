@@ -62,7 +62,7 @@ def classify_exception(exc: Exception) -> StructuredError:
     error_type = "internal_error"
     message = "The RCA pipeline failed unexpectedly."
 
-    if isinstance(exc, ValidationError) and exc.title == "RCAReport":
+    if isinstance(exc, ValidationError) and exc.title in {"RCAReport", "RCAGenerationReport"}:
         error_type = "model_output_invalid"
         message = "The model returned a malformed RCA report."
     elif isinstance(exc, ValidationError):
@@ -95,6 +95,12 @@ def classify_exception(exc: Exception) -> StructuredError:
     elif status_code == 429 or "RateLimit" in name:
         error_type = "provider_unreachable"
         message = "The model endpoint is rate-limiting requests; retry later."
+    elif "IncompleteOutput" in name:
+        error_type = "model_output_invalid"
+        message = (
+            "The model response ended before a complete schema-valid RCA "
+            "object was returned."
+        )
     elif "InstructorRetry" in name:
         error_type = "model_output_invalid"
         message = (

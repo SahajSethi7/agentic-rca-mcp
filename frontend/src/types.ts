@@ -15,6 +15,26 @@ export interface FaultTreeGate { type: string; event: string; children: string[]
 export interface FaultTreeDetail { top_event: string; gates: FaultTreeGate[]; basic_causes: string[]; }
 export interface MethodDetail { fishbone?: FishboneDetail; fault_tree?: FaultTreeDetail; }
 
+export interface KnownIssueMatch {
+  incident_id: string;
+  date?: string | null;
+  system_area?: string | null;
+  service_name?: string | null;
+  error_signature?: string | null;
+  problem_statement: string;
+  symptoms?: string | null;
+  root_cause: string;
+  immediate_fix?: string | null;
+  long_term_fix?: string | null;
+  evidence_checked?: string | null;
+  owner_team?: string | null;
+  tags?: string | null;
+  confidence?: Confidence | null;
+  status?: string | null;
+  similarity_score: number;
+  match_reason: string;
+}
+
 export interface RCAReport {
   problem: string;
   summary: string;
@@ -24,6 +44,7 @@ export interface RCAReport {
   recommendations: string[];
   assumptions: string[];
   evidence_needed: string[];
+  known_issue_matches?: KnownIssueMatch[];
   validation_notes: string[];
   method_detail: MethodDetail | null;
   confidence: Confidence;
@@ -33,14 +54,23 @@ export interface RCAReport {
   latency_seconds: number | null;
 }
 
-export interface RunUrls { pdf_url: string; html_url: string; json_url: string; }
+export interface RunUrls { pdf_url: string; html_url: string; json_url: string; memory_xlsx_url?: string; }
 export interface RunError { error_type?: string; message?: string; detail?: string }
+export interface ActivityItem {
+  stage: Stage;
+  title: string;
+  detail?: string;
+  substeps?: string[];
+  files?: string[];
+}
 
 export interface RunState {
   index: number;
+  job_id?: string;
   method: Method;
   stage: Stage;
   round?: number | null;
+  activity?: ActivityItem[];
   report?: RCAReport;
   urls?: RunUrls;
   error?: RunError | null;
@@ -48,8 +78,41 @@ export interface RunState {
 
 export interface AnalyzeResponse { job_id: string; runs: { index: number; method: Method }[]; }
 
+export interface MemoryMeta {
+  enabled: boolean;
+  path?: string;
+  record_count: number | null;
+  warning?: string | null;
+}
+
+export interface UiMeta {
+  methods: Method[];
+  severities: string[];
+  stages: Stage[];
+  models?: {
+    writer: string;
+    validator: string;
+  };
+  provider?: string;
+  validation?: {
+    enabled: boolean;
+    model: string;
+  };
+  memory?: MemoryMeta;
+}
+
 export type SSEvent =
-  | { type: "stage"; run: number; method: Method; stage: Stage; round?: number | null }
+  | {
+      type: "stage";
+      run: number;
+      method: Method;
+      stage: Stage;
+      round?: number | null;
+      detail?: string;
+      substeps?: string[];
+      files?: string[];
+      rationale?: string;
+    }
   | ({ type: "result"; run: number; method: Method; report: RCAReport } & RunUrls)
   | { type: "error"; run: number; method: Method; error: RunError }
   | { type: "complete" };

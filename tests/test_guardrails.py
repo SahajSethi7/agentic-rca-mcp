@@ -18,7 +18,9 @@ from fastapi.testclient import TestClient
 from agent.orchestrator import RCAAgent
 from agentic_rca.__main__ import main as cli_main
 from config import Settings
+from providers.base import RCAProvider
 from rca_agent import generate_rca
+from schemas import RCAInput, RCAReport, ValidationVerdict
 from utils import (
     PipelineError,
     audit_log_path,
@@ -268,6 +270,72 @@ def test_validation_model_failure_is_fail_soft(monkeypatch, tmp_path) -> None:
 
     assert report.root_cause
     assert any("Validation pass unavailable" in note for note in report.validation_notes)
+
+
+def test_dedicated_local_validation_model_uses_llama32(
+    monkeypatch,
+    tmp_path,
+    stub_provider,
+) -> None:
+    """Local validation must use VALIDATION_MODEL, not the RCA generation model."""
+    import validation
+
+    requested_models: list[str] = []
+
+    class RecordingValidationProvider(RCAProvider):
+        def __init__(self, settings: Settings | None = None, model: str | None = None) -> None:
+            self.settings = settings or Settings()
+            self._model = model or self.settings.rca_model
+            requested_models.append(self._model)
+
+        @property
+        def model(self) -> str:
+            return self._model
+
+        def generate(
+            self,
+            rca_input: RCAInput,
+            *,
+            prompt_version: str,
+            strict_retry: bool = False,
+        ) -> RCAReport:
+            raise AssertionError("validation provider should not generate RCA reports")
+
+        def create_structured(
+            self,
+            messages,
+            response_model,
+            *,
+            max_retries=None,
+        ):
+            assert response_model is ValidationVerdict
+            return ValidationVerdict(
+                confidence="high",
+                validation_notes=["Reviewed by the dedicated validation model."],
+            )
+
+    monkeypatch.setattr(validation, "OllamaProvider", RecordingValidationProvider)
+    settings = Settings(
+        output_dir=tmp_path,
+        validation_enabled=True,
+        validation_model="llama3.2:latest",
+        hosted_base_url=None,
+        hosted_api_key=None,
+        agent_timeout_seconds=30,
+        max_revise_rounds=0,
+    )
+    agent = RCAAgent(settings=settings, provider=stub_provider)
+
+    report = agent.run("checkout requests time out after a database migration")
+
+    assert report.source_model == "stub-model"
+    assert requested_models == ["llama3.2:latest"]
+    assert agent.last_run_stats["generation_model"] == "stub-model"
+    assert agent.last_run_stats["validation_model"] == "llama3.2:latest"
+    assert any(
+        note.startswith("[validator:llama3.2:latest]")
+        for note in report.validation_notes
+    )
 
 
 # --- adversarial input survives end to end -----------------------------------

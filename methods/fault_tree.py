@@ -33,7 +33,9 @@ class FaultTreeMethod(RCAMethod):
             '"event": "<intermediate event>", "children": ["<basic or intermediate cause>", ...]}], '
             '"basic_causes": ["<deepest causes>", ...]}}\n'
             "- two or three levels deep at most; 1-3 gates; 2-5 basic_causes\n"
-            "- root_cause must be the most load-bearing basic cause, stated as a system/process failure\n"
+            "- root_cause must be the most load-bearing basic cause, stated as a specific failed system/process/configuration control\n"
+            "- if past RCA memory matches are shown, mention useful incident IDs in validation_notes or evidence_needed\n"
+            "- put plausible alternative causes in other branches, assumptions, or evidence_needed\n"
             "- also provide a condensed 3-5 step why_chain tracing the dominant path to the root cause\n"
             "- include 2-6 contributing_factors (other branches of the tree)\n"
             "- include 2-6 recommendations that cut the dominant path\n"

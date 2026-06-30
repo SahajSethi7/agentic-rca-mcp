@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 import api
 import web.jobs as jobs
+import web.routes as routes
 from config import Settings
 from schemas import RCAReport
 
@@ -81,10 +82,24 @@ def test_index_page_is_served(client):
     assert "/assets/" in resp.text            # built JS/CSS
 
 
-def test_meta_lists_methods_and_stages(client):
+def test_meta_lists_methods_and_stages(client, monkeypatch):
+    monkeypatch.setattr(
+        routes,
+        "get_settings",
+        lambda: Settings(
+            rca_model="demo-writer:1b",
+            validation_model="demo-validator:2b",
+        ),
+    )
     meta = client.get("/ui/meta").json()
     assert meta["methods"] == ["five_why", "fishbone", "fault_tree"]
     assert "critiquing" in meta["stages"]
+    assert meta["models"] == {
+        "writer": "demo-writer:1b",
+        "validator": "demo-validator:2b",
+    }
+    assert meta["memory"]["enabled"] is True
+    assert isinstance(meta["memory"]["record_count"], int)
 
 
 def test_analyze_streams_stages_and_renders_report(client):
@@ -103,12 +118,18 @@ def test_analyze_streams_stages_and_renders_report(client):
     assert report["root_cause"]
     assert len(report["why_chain"]) >= 3
     assert "html" not in results[0]
+    assert results[0]["memory_xlsx_url"].endswith("/matching-past-rcas.xlsx")
     # PDF download serves a real file as an attachment.
     pdf = client.get(results[0]["pdf_url"])
     assert pdf.status_code == 200
     assert pdf.headers["content-type"] == "application/pdf"
     assert "attachment" in pdf.headers.get("content-disposition", "")
     assert len(pdf.content) > 800
+    xlsx = client.get(results[0]["memory_xlsx_url"])
+    assert xlsx.status_code == 200
+    assert "spreadsheetml.sheet" in xlsx.headers["content-type"]
+    assert "attachment" in xlsx.headers.get("content-disposition", "")
+    assert len(xlsx.content) > 2000
 
 
 def test_compare_two_methods_runs_both(client):

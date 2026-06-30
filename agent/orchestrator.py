@@ -20,11 +20,12 @@ from typing import Any, Callable
 
 from agent.tools import run_all_checks
 from config import Settings, get_settings
+from memory import append_memory_to_context, search_past_rca_memory
 from prompts import build_revise_messages
 from providers.base import RCAProvider
 from rca_agent import build_provider, generate_rca
 from sanitizer import sanitize_rca_input
-from schemas import CritiqueResult, RCAInput, RCAReport
+from schemas import CritiqueResult, RCAInput, RCAGenerationReport, RCAReport
 from validation import validate_rca
 
 logger = logging.getLogger("agentic_rca.orchestrator")
@@ -94,8 +95,8 @@ class RCAAgent:
     ) -> RCAReport:
         revised = self.provider.create_structured(
             build_revise_messages(rca_input, report, critique),
-            RCAReport,
-        )
+            RCAGenerationReport,
+        ).to_rca_report()
         from methods import get_method
 
         revised = get_method(rca_input.method).parse(revised)
@@ -143,18 +144,75 @@ class RCAAgent:
         if sanitizer_findings:
             logger.info("Sanitizer findings: %s", sanitizer_findings)
 
+        memory_search = None
+        memory_matches = []
+        if self.settings.memory_enabled:
+            memory_search = search_past_rca_memory(
+                rca_input,
+                self.settings.memory_path,
+                max_matches=self.settings.memory_max_matches,
+                min_score=self.settings.memory_min_score,
+            )
+            memory_matches = memory_search.matches
+            if memory_search.evidence_pack:
+                rca_input = rca_input.model_copy(
+                    update={
+                        "context": append_memory_to_context(
+                            rca_input.context,
+                            memory_search.evidence_pack,
+                        )
+                    }
+                )
+            if memory_search.warning:
+                logger.info("RCA memory note: %s", memory_search.warning)
+
         self.last_run_stats = {
             "method": rca_input.method,
             "sanitizer_findings": sanitizer_findings,
             "rounds": 0,
             "generation_model": None,
             "validation_model": None,
+            "memory_matches": [match.model_dump(mode="json") for match in memory_matches],
+            "memory_retrieval_mode": memory_search.retrieval_mode if memory_search else "disabled",
         }
 
-        emit("planning")
+        planning_substeps = [
+            "Parsed problem, optional context, severity, and system area.",
+            f"Selected method: {rca_input.method}.",
+            f"Using prompt version: {self.settings.prompt_version}.",
+            "Applied sanitizer and prompt-injection delimiters before model use.",
+        ]
+        if self.settings.memory_enabled:
+            if memory_matches:
+                context_count = memory_search.context_match_count if memory_search else len(memory_matches)
+                planning_substeps.append(
+                    f"Retrieved {len(memory_matches)} similar past RCA record(s) at or above the match threshold; included {context_count} in the model context."
+                )
+                planning_substeps.extend(
+                    f"{match.incident_id}: {match.root_cause} (score {match.similarity_score:.2f})"
+                    for match in memory_matches[:5]
+                )
+            elif memory_search and memory_search.warning:
+                planning_substeps.append(memory_search.warning)
+            else:
+                planning_substeps.append("No similar past RCA memory records met the score threshold.")
+
+        emit(
+            "planning",
+            detail="Validated the incident request and selected the RCA workflow.",
+            substeps=planning_substeps,
+        )
         self.plan(rca_input)
-        emit("generating")
+        emit(
+            "generating",
+            detail="Calling the generation model for schema-validated RCA output.",
+            substeps=[
+                f"Generation model: {self.settings.rca_model}.",
+                "Requested structured JSON matching the lean RCA generation schema.",
+            ],
+        )
         report = self.generate(rca_input)
+        report = report.model_copy(update={"known_issue_matches": memory_matches})
         self.last_run_stats["generation_model"] = report.source_model
 
         rounds = 0
@@ -171,10 +229,26 @@ class RCAAgent:
                 )
                 break
 
-            emit("critiquing", round=rounds + 1)
+            emit(
+                "critiquing",
+                round=rounds + 1,
+                detail="Running deterministic quality checks on the draft RCA.",
+                substeps=[
+                    "Checking whether the why-chain deepens instead of repeating symptoms.",
+                    "Checking root cause specificity.",
+                    "Checking for individual blame language.",
+                    f"Checking method consistency for {rca_input.method}.",
+                ],
+            )
             critique = self.critique(report)
             if not critique.issues:
                 logger.info("Critique round %d: clean, stopping loop.", rounds + 1)
+                emit(
+                    "critiquing",
+                    round=rounds + 1,
+                    detail="Deterministic critique found no blocking issues.",
+                    substeps=["No revision needed for this round."],
+                )
                 break
 
             logger.info(
@@ -183,7 +257,18 @@ class RCAAgent:
                 len(critique.issues),
                 [issue.check for issue in critique.issues],
             )
-            emit("revising", round=rounds + 1)
+            emit(
+                "revising",
+                round=rounds + 1,
+                detail="Asking the generation model to revise the RCA using critique findings.",
+                substeps=[
+                    *[
+                        f"{issue.check}: {issue.message}"
+                        for issue in critique.issues[:4]
+                    ],
+                    "Preserving schema validation and method-specific structure.",
+                ],
+            )
             try:
                 revised = self.revise(rca_input, report, critique)
             except Exception:
@@ -208,6 +293,7 @@ class RCAAgent:
             )
             report = revised.model_copy(
                 update={
+                    "known_issue_matches": memory_matches,
                     "validation_notes": [
                         *revised.validation_notes,
                         f"[agent] round {rounds + 1}: critique flagged {summary}; revised.",
@@ -221,6 +307,7 @@ class RCAAgent:
         if residual:
             report = report.model_copy(
                 update={
+                    "known_issue_matches": memory_matches,
                     "validation_notes": [
                         *report.validation_notes,
                         *[
@@ -232,12 +319,21 @@ class RCAAgent:
             )
 
         if self.settings.validation_enabled and monotonic() < deadline:
-            emit("validating")
+            emit(
+                "validating",
+                detail="Running the reviewer model to assess confidence and validation notes.",
+                substeps=[
+                    f"Validation model: {self.settings.validation_model or self.settings.rca_model}.",
+                    "Checking whether recommendations match the stated root cause.",
+                    "Checking assumptions and evidence gaps before final confidence is assigned.",
+                ],
+            )
             report = validate_rca(
                 report,
                 fallback_provider=self._provider,
                 settings=self.settings,
             )
+            report = report.model_copy(update={"known_issue_matches": memory_matches})
             self.last_run_stats["validation_model"] = (
                 self.settings.validation_model
                 or (self._provider.model if self._provider is not None else None)
@@ -249,6 +345,7 @@ class RCAAgent:
         if any(issue.check == "anti_blame" for issue in residual) and report.confidence != "low":
             report = report.model_copy(
                 update={
+                    "known_issue_matches": memory_matches,
                     "confidence": "low",
                     "validation_notes": [
                         *report.validation_notes,
@@ -261,6 +358,7 @@ class RCAAgent:
         if sanitizer_findings:
             report = report.model_copy(
                 update={
+                    "known_issue_matches": memory_matches,
                     "validation_notes": [
                         *report.validation_notes,
                         *[f"[sanitizer] {finding}" for finding in sanitizer_findings],
@@ -268,6 +366,20 @@ class RCAAgent:
                 }
             )
 
+        if memory_matches:
+            memory_note = (
+                f"[memory] retrieved {len(memory_matches)} similar past RCA record(s): "
+                + ", ".join(match.incident_id for match in memory_matches[:5])
+            )
+            if memory_note not in report.validation_notes:
+                report = report.model_copy(
+                    update={
+                        "known_issue_matches": memory_matches,
+                        "validation_notes": [*report.validation_notes, memory_note],
+                    }
+                )
+
+        report = report.model_copy(update={"known_issue_matches": memory_matches})
         self.last_run_stats["confidence"] = report.confidence
         emit("done", confidence=report.confidence)
         return report

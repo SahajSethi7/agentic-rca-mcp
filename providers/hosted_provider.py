@@ -10,7 +10,9 @@ from openai import OpenAI
 from config import Settings, get_settings
 from prompts import build_messages
 from providers.base import RCAProvider
-from schemas import RCAInput, RCAReport
+from providers.recovery import recover_generation_report
+from schemas import RCAInput, RCAGenerationReport, RCAReport
+from utils import classify_exception
 
 
 class HostedProvider(RCAProvider):
@@ -45,17 +47,25 @@ class HostedProvider(RCAProvider):
         strict_retry: bool = False,
     ) -> RCAReport:
         started = perf_counter()
-        report = self.client.chat.completions.create(
-            model=self.model,
-            response_model=RCAReport,
-            max_retries=self.settings.max_retries,
-            temperature=0,
-            messages=build_messages(
-                rca_input,
-                prompt_version=prompt_version,
-                strict_retry=strict_retry,
-            ),
-        )
+        try:
+            draft = self.client.chat.completions.create(
+                model=self.model,
+                response_model=RCAGenerationReport,
+                max_retries=self.settings.max_retries,
+                max_tokens=self.settings.max_output_tokens,
+                temperature=0,
+                messages=build_messages(
+                    rca_input,
+                    prompt_version=prompt_version,
+                    strict_retry=strict_retry,
+                ),
+            )
+        except Exception as exc:
+            if classify_exception(exc).error_type != "model_output_invalid":
+                raise
+            draft = recover_generation_report(exc, rca_input)
+
+        report = draft.to_rca_report()
         latency = round(perf_counter() - started, 3)
         return report.model_copy(
             update={

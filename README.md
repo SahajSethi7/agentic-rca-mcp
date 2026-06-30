@@ -6,6 +6,16 @@ Open-source local-model prototype for generating Root Cause Analysis reports thr
 
 ## Current Status
 
+Demo upgrade complete. The current local demo path now uses `qwen3.5:9b` as
+the main RCA writer, keeps `qwen3.5:4b` available as the faster fallback, and
+keeps `llama3.2:latest` as the validation/eval model. The RCA pipeline now also
+loads a repaired 512-row Excel memory workbook from
+`data/past_rca_memory_sample_repaired.xlsx`, retrieves similar past incidents
+before generation, injects those matches as supporting evidence, and surfaces
+them in the React UI plus the PDF/HTML/JSON artifacts. LangGraph/LangChain are
+installed for the memory retrieval workflow when available; the system falls
+back to deterministic local Excel scoring if those packages are absent.
+
 Phase 6 web UI + HTML report (ambitious edition, Days 36-38). The pipeline now
 has a fourth entry point: a React (TypeScript + Tailwind, Vite) web UI over the
 FastAPI service with a live agent-stage status line, the RCA rendered as React
@@ -74,7 +84,8 @@ pip install -r requirements.txt
 Install Ollama separately, then pull the local models:
 
 ```powershell
-ollama pull qwen2.5:7b
+ollama pull qwen3.5:9b
+ollama pull qwen3.5:4b
 ollama pull llama3.2:latest
 ```
 
@@ -83,9 +94,13 @@ The local `.env` uses:
 ```text
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434/v1
-RCA_MODEL=qwen2.5:7b
+RCA_MODEL=qwen3.5:9b
 RCA_PROMPT_VERSION=v3
 VALIDATION_MODEL=llama3.2:latest
+RCA_MEMORY_ENABLED=true
+RCA_MEMORY_PATH=./data/past_rca_memory_sample_repaired.xlsx
+RCA_MEMORY_MAX_MATCHES=3
+RCA_MEMORY_MIN_SCORE=0.18
 ```
 
 ## Run The MCP Server
@@ -106,7 +121,7 @@ python -m agentic_rca "invoice jobs stopped after scheduler change" --method fis
 ```
 
 The Phase 4 sample files in `examples/` were regenerated from live Ollama CLI
-runs with `qwen2.5:7b` and validated by `llama3.2:latest`.
+runs with the configured Qwen generation model and validated by `llama3.2:latest`.
 
 ## Run The FastAPI Service
 
@@ -139,7 +154,11 @@ The app provides a problem form with method/severity selectors, a live
 agent-stage status line (planning -> generating -> critiquing -> revising ->
 validating) streamed over SSE with a polling fallback, the finished RCA rendered
 as React components, a Download-PDF button, and a compare-two-methods toggle that
-runs the same problem through two methods side by side. See
+runs the same problem through two methods side by side. Each stage can show
+substeps such as memory retrieval, model generation, deterministic critique,
+artifact rendering, and output files. When Excel memory finds similar incidents,
+the report shows a "Past RCA Memory" section with incident IDs, match scores,
+known root causes, fixes, and evidence checked. See
 `docs/web_ui_guide.md` for a full walkthrough. The UI shares the Phase 5
 guardrails - sanitization, structured errors, and the audit log all live in the
 pipeline (`web/jobs.py` runs each analysis through `RCAAgent`), so the web
@@ -180,7 +199,8 @@ ruff check .
 
 ```powershell
 docker compose up --build -d
-docker compose exec ollama ollama pull qwen2.5:7b
+docker compose exec ollama ollama pull qwen3.5:9b
+docker compose exec ollama ollama pull qwen3.5:4b
 docker compose exec ollama ollama pull llama3.2:latest
 # API: http://localhost:8000/rca
 # CLI inside the container; the PDF lands in ./outputs on the host:
@@ -207,7 +227,10 @@ Applications / NIST AI RMF):
 | JSONL audit log of every invocation (hash, models, rounds, outcome) | `utils.append_audit_record` | NIST AI RMF Govern/Map (accountability, traceability) |
 | Clean structured errors, no stack traces or raw provider payloads to clients | `utils.classify_exception` | OWASP API security: no internal detail leakage |
 | Bounded agent loop (max rounds + global time budget + deterministic fallback) | `agent/orchestrator.py` | OWASP LLM08 Excessive Agency |
+| Read-only past RCA memory: previous incidents are evidence, not automatic truth | `memory.py`, `agent/orchestrator.py` | NIST AI RMF Map/Measure (traceability, uncertainty) |
 
 ## Notes
 
-`qwen2.5:14b` was not selected because it failed locally with a CUDA runtime error. `llama3.2:latest` remains useful as a fallback and eval comparison model.
+`qwen3.5:9b` is the current local generation default. `qwen3.5:4b` is installed
+as the lower-latency fallback for constrained demo runs. `llama3.2:latest`
+remains useful as the validation model and eval comparison model.

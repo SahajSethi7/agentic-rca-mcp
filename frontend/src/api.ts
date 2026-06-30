@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, SSEvent } from "./types";
+import type { AnalyzeResponse, SSEvent, UiMeta } from "./types";
 
 export interface AnalyzePayload {
   problem_statement: string;
@@ -16,6 +16,12 @@ export async function startAnalyze(payload: AnalyzePayload): Promise<AnalyzeResp
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`analyze failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchMeta(): Promise<UiMeta> {
+  const res = await fetch("/ui/meta");
+  if (!res.ok) throw new Error(`meta failed: ${res.status}`);
   return res.json();
 }
 

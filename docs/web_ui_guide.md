@@ -34,7 +34,8 @@ The UI needs the API running, and the API needs a model to talk to.
 2. Have a model available. The default is local Ollama:
 
    ```bash
-   ollama pull qwen2.5:7b
+   ollama pull qwen3.5:9b
+   ollama pull qwen3.5:4b
    ollama pull llama3.2:latest
    ```
 
@@ -43,6 +44,12 @@ The UI needs the API running, and the API needs a model to talk to.
 
 3. Confirm your `.env` points at the provider you want (`LLM_PROVIDER`,
    `RCA_MODEL`, etc.).
+
+4. Confirm the demo Excel memory exists:
+
+   ```bash
+   Test-Path .\data\past_rca_memory_sample_repaired.xlsx
+   ```
 
 ---
 
@@ -120,6 +127,10 @@ in order, are:
 5. **Validate** — an optional stronger reviewer model sets the final confidence.
 6. **Render** — the PDF, HTML and JSON artifacts are written.
 
+The planning and activity trace now include safe substeps such as selected
+method, Excel memory matches, model generation, deterministic critique,
+validation, and files written during rendering.
+
 Completed stages turn green with a check; the current stage pulses. Local
 inference can be slow — a single run may take from several seconds to a couple
 of minutes depending on your hardware and model. That is expected.
@@ -138,6 +149,9 @@ mirrors the PDF exactly and includes:
 - A header band with the problem, the method, the model, latency, and a
   **colour-coded confidence chip** (green = high, amber = medium, red = low).
 - **Executive summary**.
+- **Past RCA Memory** when similar incidents are found in the Excel workbook:
+  incident IDs, match scores, known root causes, immediate fixes, evidence
+  checked, and match reasons.
 - **Why chain** — a numbered, deepening stepper; the final node (the root
   cause) is marked in dark.
 - **5-Why tree** — for the 5 Whys method, an interactive Mermaid diagram of the
@@ -193,6 +207,8 @@ frame the same incident.
 - **A run takes a long time** — local inference is the bottleneck; try a smaller
   model or be patient. The agent loop is bounded (max 2 revise rounds plus a
   global timeout), so it always finishes with a report or a clean error.
+- **No Past RCA Memory section appears**: no workbook record crossed the
+  similarity threshold, or `RCA_MEMORY_ENABLED=false` in `.env`.
 
 ---
 

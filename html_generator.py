@@ -1,4 +1,4 @@
-"""HTML report generator — modern "incident console" theme.
+"""HTML report generator - modern "incident console" theme.
 
 Renders a validated :class:`RCAReport` into a single, self-contained, styled
 HTML document that mirrors the PDF section order and every Phase 4 quality
@@ -31,7 +31,7 @@ from typing import Any
 
 from schemas import RCAReport
 
-ACCENT = "#4f46e5"
+ACCENT = "#ea580c"
 
 CONFIDENCE_COLORS = {
     "high": "#16a34a",
@@ -55,8 +55,8 @@ DISCLAIMER = (
 # file, the web UI and the print layout all draw from a single source of truth.
 REPORT_CSS = """
 :root{
-  --accent:#4f46e5; --accent-2:#7c6ff5; --accent-soft:#eef2ff; --accent-ring:#c7d2fe;
-  --bg:#f5f6fb; --surface:#ffffff; --ink:#1e2330; --ink-soft:#475067;
+  --accent:#ea580c; --accent-2:#0f766e; --accent-3:#4f46e5; --accent-soft:#fff7ed; --accent-ring:#fed7aa;
+  --bg:#fff7ed; --surface:#ffffff; --ink:#1e2330; --ink-soft:#475067;
   --muted:#6b7280; --line:#e7e9f2; --line-strong:#d7dbea;
   --high:#16a34a; --medium:#d97706; --low:#dc2626;
   --radius:16px; --radius-sm:10px;
@@ -72,10 +72,10 @@ REPORT_CSS = """
 
 /* Header band */
 .rca-hero{position:relative;overflow:hidden;border-radius:var(--radius);
-  background:linear-gradient(135deg,#4f46e5 0%,#6d5ef0 48%,#8b7bf7 100%);
+  background:linear-gradient(135deg,#ea580c 0%,#0f766e 52%,#4f46e5 100%);
   color:#fff;padding:30px 32px 28px;box-shadow:var(--shadow)}
 .rca-hero::after{content:"";position:absolute;inset:0;
-  background:radial-gradient(900px 300px at 90% -40%,rgba(255,255,255,.28),transparent 60%);
+  background:linear-gradient(90deg,rgba(255,255,255,.18),rgba(255,255,255,0));
   pointer-events:none}
 .rca-eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;
   font-weight:700;opacity:.85;margin:0 0 6px}
@@ -132,7 +132,7 @@ REPORT_CSS = """
 .rca-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
 .rca-list li{position:relative;padding:11px 14px 11px 40px;background:#fbfbfe;
   border:1px solid var(--line);border-radius:var(--radius-sm);font-size:14px;color:var(--ink-soft)}
-.rca-list.check li::before{content:"\2713";position:absolute;left:13px;top:11px;
+.rca-list.check li::before{content:"\\2713";position:absolute;left:13px;top:11px;
   color:var(--high);font-weight:800}
 .rca-list.dot li::before{content:"";position:absolute;left:15px;top:18px;width:7px;height:7px;
   border-radius:50%;background:var(--accent)}
@@ -145,6 +145,30 @@ REPORT_CSS = """
   font-size:13px;padding-left:14px}
 .rca-list.notes li::before{display:none}
 .rca-list.notes li .mono{font-family:var(--mono);font-size:11.5px;color:var(--accent)}
+
+/* Past RCA memory */
+.memory-top{border:1px solid var(--accent-ring);background:var(--accent-soft);
+  border-radius:var(--radius-sm);padding:14px 15px}
+.memory-tags{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px}
+.memory-tags span{display:inline-flex;border:1px solid var(--accent-ring);background:#fff;
+  border-radius:7px;padding:3px 8px;font-size:11px;font-weight:700;color:var(--muted)}
+.memory-tags .id{font-family:var(--mono);background:var(--accent);border-color:var(--accent);
+  color:#fff}
+.memory-label{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--accent);margin:0 0 4px}
+.memory-root{margin:0;color:var(--ink);font-size:14.5px;font-weight:700}
+.memory-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:11px}
+.memory-box{border:1px solid var(--line);border-radius:8px;background:#fff;padding:9px 10px}
+.memory-box p{margin:0;font-size:12.8px;color:var(--ink-soft)}
+.memory-box .lbl{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:3px}
+.memory-reason{margin:11px 0 0;color:var(--muted);font-size:12.5px}
+.memory-rest{display:grid;gap:8px;margin-top:10px}
+.memory-row{border:1px solid var(--line);border-radius:9px;background:#fbfbfe;padding:10px 12px}
+.memory-row p{margin:0}
+.memory-row .id{font-family:var(--mono);font-size:12px;font-weight:800;color:var(--accent)}
+.memory-row .root{font-size:13.5px;font-weight:700;color:var(--ink);margin-top:3px}
+.memory-row .reason{font-size:12px;color:var(--muted);margin-top:2px}
 
 /* Fishbone */
 .fish{display:grid;gap:10px}
@@ -182,6 +206,12 @@ REPORT_CSS = """
   repeating-linear-gradient(0deg,#fcfcff,#fcfcff 23px,#f4f5fb 24px);
   padding:18px;overflow:auto;text-align:center;min-height:80px}
 .mermaid{font-family:var(--sans)!important}
+.mermaid svg .node:not(.root) .nodeLabel,.mermaid svg .node:not(.root) .label,
+.mermaid svg .node:not(.root) foreignObject,.mermaid svg .node:not(.root) foreignObject *,
+.mermaid svg .edgeLabel,.mermaid svg .edgeLabel *{color:#111827!important;fill:#111827!important}
+.mermaid svg .node.root .nodeLabel,.mermaid svg .node.root .label,
+.mermaid svg .node.root foreignObject,.mermaid svg .node.root foreignObject *{color:#ffffff!important;fill:#ffffff!important}
+.mermaid svg .edgeLabel rect,.mermaid svg .labelBkg{background:#ffffff!important;fill:#ffffff!important;fill-opacity:.96!important}
 .tree-fallback{display:none;font-size:13px;color:var(--muted);padding:10px 4px}
 .tree-card.failed .mermaid{display:none}
 .tree-card.failed .tree-fallback{display:block}
@@ -213,7 +243,7 @@ MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"
 def _meta_tags(report: RCAReport) -> str:
     method_label = METHOD_LABELS.get(report.method or "", report.method or "")
     bits: list[str] = [
-        f"<span class='rca-tag'>\U0001f553 <b>{escape(datetime.now().strftime('%d %b %Y · %H:%M'))}</b></span>",
+        f"<span class='rca-tag'>generated <b>{escape(datetime.now().strftime('%d %b %Y %H:%M'))}</b></span>",
     ]
     if method_label:
         bits.append(f"<span class='rca-tag'>method <b>{escape(method_label)}</b></span>")
@@ -223,6 +253,8 @@ def _meta_tags(report: RCAReport) -> str:
         bits.append(f"<span class='rca-tag'>prompt <span class='mono'>{escape(report.prompt_version)}</span></span>")
     if report.latency_seconds is not None:
         bits.append(f"<span class='rca-tag'>latency <span class='mono'>{escape(str(report.latency_seconds))}s</span></span>")
+    if report.known_issue_matches:
+        bits.append(f"<span class='rca-tag'>memory <b>{len(report.known_issue_matches)} matches</b></span>")
     return "".join(bits)
 
 
@@ -230,7 +262,7 @@ def _confidence_chip(report: RCAReport) -> str:
     color = CONFIDENCE_COLORS.get(report.confidence, "#6b7280")
     return (
         f"<span class='rca-chip' style='background:{color}'>"
-        f"<span class='dot'></span>CONFIDENCE · {escape(report.confidence.upper())}</span>"
+        f"<span class='dot'></span>MODEL VERDICT - {escape(report.confidence.upper())}</span>"
     )
 
 
@@ -262,6 +294,64 @@ def _notes_card(title: str, items: list[str]) -> str:
     )
 
 
+def _memory_section(report: RCAReport) -> str:
+    matches = report.known_issue_matches
+    if not matches:
+        return ""
+
+    total = len(matches)
+    visible = matches[:3]
+    top = visible[0]
+    tags = [
+        f"<span class='id'>{escape(top.incident_id)}</span>",
+        f"<span>{round(top.similarity_score * 100)}% match</span>",
+    ]
+    if top.service_name:
+        tags.append(f"<span>{escape(top.service_name)}</span>")
+    if top.date:
+        tags.append(f"<span>{escape(top.date)}</span>")
+
+    boxes = []
+    if top.immediate_fix:
+        boxes.append(
+            "<div class='memory-box'><p class='lbl'>Immediate fix</p>"
+            f"<p>{escape(top.immediate_fix)}</p></div>"
+        )
+    if top.evidence_checked:
+        boxes.append(
+            "<div class='memory-box'><p class='lbl'>Evidence checked</p>"
+            f"<p>{escape(top.evidence_checked)}</p></div>"
+        )
+    grid = f"<div class='memory-grid'>{''.join(boxes)}</div>" if boxes else ""
+    rest = "".join(
+        "<div class='memory-row'>"
+        f"<p class='id'>{escape(match.incident_id)} - {round(match.similarity_score * 100)}% match</p>"
+        f"<p class='root'>{escape(match.root_cause)}</p>"
+        f"<p class='reason'>{escape(match.match_reason)}</p>"
+        "</div>"
+        for match in visible[1:]
+    )
+    rest_html = f"<div class='memory-rest'>{rest}</div>" if rest else ""
+    summary = (
+        f"<p class='memory-reason'>Found {total} matching past RCA record"
+        f"{'s' if total != 1 else ''}. Showing top {len(visible)} here; "
+        "download the Excel workbook for the full list.</p>"
+    )
+
+    return (
+        "<section class='rca-card'><h2 class='rca-h2'>Past RCA Memory"
+        f"<span class='count'>top {len(visible)} of {total}</span></h2>"
+        "<div class='memory-top'>"
+        f"<div class='memory-tags'>{''.join(tags)}</div>"
+        "<p class='memory-label'>Known root cause</p>"
+        f"<p class='memory-root'>{escape(top.root_cause)}</p>"
+        f"{grid}"
+        f"<p class='memory-reason'>{escape(top.match_reason)}</p>"
+        "</div>"
+        f"{rest_html}{summary}</section>"
+    )
+
+
 def _why_chain_section(report: RCAReport) -> str:
     steps = []
     last = len(report.why_chain) - 1
@@ -290,7 +380,7 @@ def _fishbone_section(detail: dict[str, Any]) -> str:
     for cat, causes in categories.items():
         is_sel = cat == selected_category
         causes = causes if isinstance(causes, list) else [causes]
-        chips = "".join(f"<span>{escape(str(c))}</span>" for c in causes) if causes else "<span>—</span>"
+        chips = "".join(f"<span>{escape(str(c))}</span>" for c in causes) if causes else "<span>-</span>"
         badge = "<span class='badge'>selected</span>" if is_sel else ""
         cats.append(
             f"<div class='fish-cat{' sel' if is_sel else ''}'>"
@@ -300,7 +390,7 @@ def _fishbone_section(detail: dict[str, Any]) -> str:
     pick = ""
     if selected_cause:
         pick = (
-            f"<p class='fish-pick'>★ Selected root cause "
+            f"<p class='fish-pick'>Selected root cause "
             f"<b>({escape(str(selected_category or ''))})</b>: {escape(str(selected_cause))}</p>"
         )
     return (
@@ -330,7 +420,7 @@ def _fault_tree_section(detail: dict[str, Any]) -> str:
         basics_html = f"<div class='basics'><p class='lbl'>Basic causes</p><ul>{items}</ul></div>"
     return (
         "<section class='rca-card'><h2 class='rca-h2'>Fault Tree (Simplified)</h2>"
-        f"<div class='ftree'><p class='top'>⚠ Top event — {escape(str(top))}</p>"
+        f"<div class='ftree'><p class='top'>Top event - {escape(str(top))}</p>"
         f"<ul>{''.join(gate_items)}</ul>{basics_html}</div></section>"
     )
 
@@ -339,7 +429,7 @@ def _mermaid_label(text: str, limit: int = 64) -> str:
     """Make text safe for a Mermaid node label inside double quotes."""
     text = " ".join(text.split())
     if len(text) > limit:
-        text = text[: limit - 1].rstrip() + "…"
+        text = text[: limit - 3].rstrip() + "..."
     return (
         text.replace("&", "&amp;")
         .replace('"', "&quot;")
@@ -360,7 +450,7 @@ def _mermaid_tree(report: RCAReport) -> str:
         return ""
     lines = ["graph TD"]
     prob = _mermaid_label(report.problem, 70)
-    lines.append(f'  P["\U0001f6c8 Problem<br/>{prob}"]:::problem')
+    lines.append(f'  P["Problem<br/>{prob}"]:::problem')
     prev = "P"
     for entry in report.why_chain:
         node = f"W{entry.index}"
@@ -368,15 +458,16 @@ def _mermaid_tree(report: RCAReport) -> str:
         lines.append(f'  {prev} -->|why?| {node}["Why {entry.index}<br/>{label}"]')
         prev = node
     rc = _mermaid_label(report.root_cause, 80)
-    lines.append(f'  {prev} --> RC["\U0001f3af Root cause<br/>{rc}"]:::root')
-    lines.append("  classDef problem fill:#eef2ff,stroke:#4f46e5,stroke-width:1.5px,color:#1e2330;")
+    lines.append(f'  {prev} --> RC["Root cause<br/>{rc}"]:::root')
+    lines.append("  classDef problem fill:#fff7ed,stroke:#ea580c,stroke-width:1.5px,color:#111827;")
+    lines.append("  classDef default fill:#ffffff,stroke:#0f766e,stroke-width:1.5px,color:#111827;")
     lines.append("  classDef root fill:#0f172a,stroke:#0f172a,color:#ffffff;")
     graph = "\n".join(lines)
     return (
         "<section class='rca-card tree-card'><h2 class='rca-h2'>5-Why Tree</h2>"
         "<p class='hint'>Each step deepens the cause; the final node is the durable root cause.</p>"
         f"<div class='mermaid-wrap'><pre class='mermaid'>{escape(graph)}</pre>"
-        "<div class='tree-fallback'>Interactive tree unavailable offline — see the "
+        "<div class='tree-fallback'>Interactive tree unavailable offline - see the "
         "Why Chain above for the same path.</div></div></section>"
     )
 
@@ -398,14 +489,15 @@ def render_report_body(report: RCAReport, *, include_tree: bool = True) -> str:
     return (
         "<article class='rca-report rca-root'>"
         "<header class='rca-hero'>"
-        "<p class='rca-eyebrow'>Agentic Root Cause Analysis</p>"
-        "<h1 class='rca-title'>Incident Analysis Report</h1>"
+        "<p class='rca-eyebrow'>RCA Assistant Report</p>"
+        "<h1 class='rca-title'>Root Cause Analysis</h1>"
         f"<p class='rca-hero-problem'>{escape(report.problem)}</p>"
         f"<div class='rca-meta'>{_meta_tags(report)}{_confidence_chip(report)}</div>"
         "</header>"
         "<div class='rca-body'>"
         f"<section class='rca-card'><h2 class='rca-h2'>Executive Summary</h2>"
         f"<p class='rca-prose rca-lead'>{escape(report.summary)}</p></section>"
+        f"{_memory_section(report)}"
         f"{_why_chain_section(report)}"
         f"{tree}"
         f"{method_sections}"
@@ -434,10 +526,20 @@ def build_html(report: RCAReport, *, include_tree: bool = True) -> str:
             "<script>"
             "(function(){function fail(){document.querySelectorAll('.tree-card')"
             ".forEach(function(c){c.classList.add('failed')});}"
+            "function fixContrast(){"
+            "document.querySelectorAll('.mermaid svg .node:not(.root) foreignObject *,"
+            ".mermaid svg .node:not(.root) .nodeLabel,.mermaid svg .node:not(.root) .label,"
+            ".mermaid svg .edgeLabel,.mermaid svg .edgeLabel *').forEach(function(el){"
+            "el.style.color='#111827';el.style.fill='#111827';});"
+            "document.querySelectorAll('.mermaid svg .node.root foreignObject *,"
+            ".mermaid svg .node.root .nodeLabel,.mermaid svg .node.root .label').forEach(function(el){"
+            "el.style.color='#ffffff';el.style.fill='#ffffff';});}"
             "try{if(window.mermaid){mermaid.initialize({startOnLoad:false,"
-            "theme:'base',themeVariables:{primaryColor:'#eef2ff',primaryBorderColor:'#4f46e5',"
-            "primaryTextColor:'#1e2330',lineColor:'#94a3b8',fontFamily:'Inter,system-ui,sans-serif'}});"
-            "mermaid.run().catch(fail);}else{fail();}}catch(e){fail();}"
+            "theme:'base',themeVariables:{primaryColor:'#ffffff',primaryBorderColor:'#0f766e',"
+            "primaryTextColor:'#111827',secondaryColor:'#fff7ed',tertiaryColor:'#ecfdf5',"
+            "nodeTextColor:'#111827',edgeLabelBackground:'#ffffff',lineColor:'#64748b',"
+            "textColor:'#111827',titleColor:'#111827',fontFamily:'Inter,system-ui,sans-serif'}});"
+            "mermaid.run().then(fixContrast).catch(fail);}else{fail();}}catch(e){fail();}"
             "setTimeout(function(){if(!document.querySelector('.mermaid svg, .mermaid[data-processed]'))fail();},2500);"
             "})();"
             "</script>"
@@ -445,7 +547,7 @@ def build_html(report: RCAReport, *, include_tree: bool = True) -> str:
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>Agentic RCA Report</title>"
+        "<title>RCA Assistant Report</title>"
         "<link rel='preconnect' href='https://fonts.googleapis.com'>"
         "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap' rel='stylesheet'>"
         f"<style>{REPORT_CSS}\nbody{{margin:0;background:var(--bg);padding:32px 18px}}</style>"
@@ -466,5 +568,6 @@ def report_summary_json(report: RCAReport) -> str:
             "source_model": report.source_model,
             "latency_seconds": report.latency_seconds,
             "root_cause": report.root_cause,
+            "known_issue_matches": len(report.known_issue_matches),
         }
     )

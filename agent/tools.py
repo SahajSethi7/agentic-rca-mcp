@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 
+from memory import generic_root_cause_issue
 from schemas import CritiqueIssue, RCAReport
 
 _STOPWORDS = {
@@ -47,6 +48,59 @@ _BLAME_PATTERN = re.compile(
     r"\b(mistake|mistakes|error|errors|forgot|failed|misconfigured|broke|ignored|missed)\b",
     re.IGNORECASE,
 )
+
+_CONCRETE_ROOT_TERMS = {
+    "alert",
+    "api",
+    "cache",
+    "circuit",
+    "config",
+    "configuration",
+    "connection",
+    "contract",
+    "credential",
+    "cron",
+    "database",
+    "dependency",
+    "deployment",
+    "feature",
+    "gate",
+    "index",
+    "job",
+    "mapping",
+    "migration",
+    "monitor",
+    "partition",
+    "permission",
+    "pipeline",
+    "pool",
+    "query",
+    "queue",
+    "rate",
+    "release",
+    "retry",
+    "route",
+    "schema",
+    "secret",
+    "scheduler",
+    "service",
+    "timeout",
+    "token",
+    "validation",
+    "version",
+}
+
+_GENERIC_ROOT_WORDS = {
+    "failure",
+    "gap",
+    "generic",
+    "insufficient",
+    "issue",
+    "lack",
+    "missing",
+    "problem",
+    "weak",
+}
 
 
 def _tokens(text: str) -> set[str]:
@@ -109,6 +163,37 @@ def check_symptom_as_cause(report: RCAReport) -> list[CritiqueIssue]:
             )
         ]
     return []
+
+
+def check_root_cause_specificity(report: RCAReport) -> list[CritiqueIssue]:
+    """Flag root causes that are too vague to drive a concrete action plan."""
+    root_cause = report.root_cause
+    issue = generic_root_cause_issue(root_cause)
+    tokens = _tokens(root_cause)
+
+    if issue is None and "generic" in tokens:
+        issue = (
+            "root_cause explicitly reads as generic; replace it with the specific "
+            "failed control, component, configuration, schema, index, pool, route, "
+            "secret, scheduler, or alert rule."
+        )
+
+    if issue is None and tokens & _GENERIC_ROOT_WORDS and not tokens & _CONCRETE_ROOT_TERMS:
+        issue = (
+            "root_cause uses broad failure language without naming a concrete "
+            "mechanism, component, artifact, or control."
+        )
+
+    if issue is None:
+        return []
+
+    return [
+        CritiqueIssue(
+            check="root_cause_specificity",
+            severity="medium",
+            message=issue,
+        )
+    ]
 
 
 def check_blame_language(report: RCAReport) -> list[CritiqueIssue]:
@@ -245,6 +330,7 @@ def run_all_checks(report: RCAReport) -> list[CritiqueIssue]:
     return [
         *verify_deepening(report),
         *check_symptom_as_cause(report),
+        *check_root_cause_specificity(report),
         *check_blame_language(report),
         *check_method_consistency(report),
     ]

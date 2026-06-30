@@ -8,7 +8,7 @@ MCP and the CLI (sanitization, structured errors, audit logging all live in
 * ``POST /ui/analyze``                        -> start a job (1 or 2 methods)
 * ``GET  /ui/events/{job_id}``                -> SSE stream of stage/result events
 * ``GET  /ui/status/{job_id}?cursor=N``       -> polling fallback for the stream
-* ``GET  /ui/jobs/{job_id}/runs/{i}/report.pdf|html|json`` -> artifacts/download
+* ``GET  /ui/jobs/{job_id}/runs/{i}/report.pdf|html|json|xlsx`` -> artifacts/download
 """
 
 from __future__ import annotations
@@ -21,6 +21,8 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from config import get_settings
+from memory import get_past_rca_memory_count
 from schemas import RCA_METHODS, RCAMethod
 from utils import utc_now_iso
 from web.jobs import STAGES, Job, manager
@@ -48,11 +50,33 @@ def _methods_for(req: AnalyzeRequest) -> list[str]:
 
 @router.get("/ui/meta")
 def meta() -> dict:
-    """Static metadata the front-end uses to build selectors."""
+    """Metadata the front-end uses to build selectors and honest status copy."""
+    settings = get_settings()
+    memory = {
+        "enabled": settings.memory_enabled,
+        "path": str(settings.memory_path),
+        "record_count": None,
+        "warning": None,
+    }
+    if settings.memory_enabled:
+        try:
+            memory["record_count"] = get_past_rca_memory_count(settings.memory_path)
+        except Exception as exc:  # noqa: BLE001 - UI metadata should degrade cleanly.
+            memory["warning"] = f"{type(exc).__name__}: {exc}"
     return {
         "methods": list(RCA_METHODS),
         "severities": ["low", "medium", "high", "critical"],
         "stages": list(STAGES),
+        "models": {
+            "writer": settings.rca_model,
+            "validator": settings.validation_model or settings.rca_model,
+        },
+        "provider": settings.provider,
+        "validation": {
+            "enabled": settings.validation_enabled,
+            "model": settings.validation_model or settings.rca_model,
+        },
+        "memory": memory,
     }
 
 
@@ -124,6 +148,7 @@ def _run_artifact(job_id: str, index: int, kind: str):
         "pdf": run.pdf_path,
         "html": run.html_path,
         "json": run.json_path,
+        "xlsx": run.memory_matches_path,
     }.get(kind)
     if path is None or not Path(path).exists():
         return JSONResponse({"error": "artifact not ready"}, status_code=404)
@@ -138,8 +163,8 @@ def download_pdf(job_id: str, index: int):
     return FileResponse(
         result,
         media_type="application/pdf",
-        filename="Agentic_RCA.pdf",
-        headers={"Content-Disposition": 'attachment; filename="Agentic_RCA.pdf"'},
+        filename="RCA_Assistant.pdf",
+        headers={"Content-Disposition": 'attachment; filename="RCA_Assistant.pdf"'},
     )
 
 
@@ -156,4 +181,17 @@ def view_json(job_id: str, index: int):
     result = _run_artifact(job_id, index, "json")
     if isinstance(result, JSONResponse):
         return result
-    return FileResponse(result, media_type="application/json", filename="Agentic_RCA.json")
+    return FileResponse(result, media_type="application/json", filename="RCA_Assistant.json")
+
+
+@router.get("/ui/jobs/{job_id}/runs/{index}/matching-past-rcas.xlsx")
+def download_matching_past_rcas(job_id: str, index: int):
+    result = _run_artifact(job_id, index, "xlsx")
+    if isinstance(result, JSONResponse):
+        return result
+    return FileResponse(
+        result,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename="RCA_Assistant_Matching_Past_RCAs.xlsx",
+        headers={"Content-Disposition": 'attachment; filename="RCA_Assistant_Matching_Past_RCAs.xlsx"'},
+    )

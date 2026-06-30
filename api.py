@@ -33,7 +33,7 @@ from utils import (
 
 logger = logging.getLogger("agentic_rca.api")
 
-app = FastAPI(title="Agentic RCA MCP Server")
+app = FastAPI(title="RCA Assistant API")
 
 # Phase 6: mount the web UI job/streaming routes on this same app, so the
 # browser inherits the guarded pipeline (sanitization, structured errors, audit
@@ -61,7 +61,7 @@ def index() -> HTMLResponse:
     if _LEGACY_INDEX.exists():
         return HTMLResponse(_LEGACY_INDEX.read_text(encoding="utf-8"))
     return HTMLResponse(
-        "<h1>Agentic RCA</h1><p>The web UI is not built yet. Run: "
+        "<h1>RCA Assistant</h1><p>The web UI is not built yet. Run: "
         "<code>cd frontend &amp;&amp; npm install &amp;&amp; npm run build</code></p>",
         status_code=503,
     )

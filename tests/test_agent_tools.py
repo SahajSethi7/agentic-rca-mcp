@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.tools import check_method_consistency, run_all_checks
+from agent.tools import check_method_consistency, check_root_cause_specificity, run_all_checks
 from schemas import RCAReport
 
 
@@ -63,6 +63,16 @@ def test_method_consistency_accepts_matching_fishbone_root_cause() -> None:
     report = RCAReport.model_validate(payload)
 
     assert check_method_consistency(report) == []
+
+
+def test_root_cause_specificity_flags_generic_root_cause() -> None:
+    payload = report_payload()
+    payload["root_cause"] = "Generic configuration issue"
+    report = RCAReport.model_validate(payload)
+
+    issues = check_root_cause_specificity(report)
+
+    assert [issue.check for issue in issues] == ["root_cause_specificity"]
 
 
 def test_method_consistency_flags_fishbone_root_cause_mismatch() -> None:

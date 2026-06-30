@@ -43,10 +43,15 @@ class RCAProvider(ABC):
         the Instructor-wrapped ``self.client`` that every concrete provider
         configures in ``__init__``.
         """
-        return self.client.chat.completions.create(  # type: ignore[attr-defined]
-            model=self.model,
-            response_model=response_model,
-            max_retries=max_retries if max_retries is not None else self.settings.max_retries,  # type: ignore[attr-defined]
-            temperature=0,
-            messages=messages,
-        )
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "response_model": response_model,
+            "max_retries": max_retries if max_retries is not None else self.settings.max_retries,  # type: ignore[attr-defined]
+            "max_tokens": self.settings.max_output_tokens,  # type: ignore[attr-defined]
+            "temperature": 0,
+            "messages": messages,
+        }
+        extra_body = getattr(self, "completion_extra_body", None)
+        if extra_body:
+            kwargs["extra_body"] = extra_body
+        return self.client.chat.completions.create(**kwargs)  # type: ignore[attr-defined]

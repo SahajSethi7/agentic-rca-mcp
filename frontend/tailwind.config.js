@@ -8,11 +8,12 @@ export default {
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
       },
       colors: {
-        ink: { DEFAULT: '#1e2330', soft: '#475067' },
+        ink: { DEFAULT: '#17202a', soft: '#4c5a67', muted: '#73808c' },
+        command: { DEFAULT: '#10202c', teal: '#0f766e', amber: '#b45309', red: '#b42318' },
       },
       boxShadow: {
-        card: '0 1px 2px rgba(16,24,40,.05), 0 4px 16px -10px rgba(31,38,95,.18)',
-        hero: '0 1px 2px rgba(16,24,40,.05), 0 12px 32px -14px rgba(31,38,95,.28)',
+        card: '0 1px 2px rgba(16,24,40,.06), 0 16px 40px -28px rgba(15,23,42,.35)',
+        hero: '0 1px 2px rgba(16,24,40,.08), 0 22px 48px -26px rgba(15,23,42,.45)',
       },
     },
   },

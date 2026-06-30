@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from schemas import CritiqueIssue, CritiqueResult, RCAInput, RCAReport
+from schemas import CritiqueIssue, CritiqueResult, RCAInput, RCAGenerationReport, RCAReport
 
 
 def valid_report_dict() -> dict:
@@ -136,6 +136,14 @@ def test_rca_report_accepts_method_detail_and_agent_fields() -> None:
     payload["validation_notes"] = ["No critique run yet."]
     parsed = RCAReport.model_validate(payload)
     assert parsed.method_detail == {"method": "five_why"}
+
+
+def test_generation_report_promotes_to_full_rca_report() -> None:
+    draft = RCAGenerationReport.model_validate(valid_report_dict())
+    report = draft.to_rca_report()
+    assert isinstance(report, RCAReport)
+    assert report.known_issue_matches == []
+    assert report.source_model is None
 
 
 def test_critique_result_accepts_issues() -> None:

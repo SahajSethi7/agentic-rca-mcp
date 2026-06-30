@@ -1,5 +1,95 @@
 # Decisions
 
+## Current Demo Model Choice
+
+Current local generation model: `qwen3.5:9b`.
+Installed local fallback model: `qwen3.5:4b`.
+
+Rationale:
+
+- The post-demo path upgrades the main RCA writer from the Phase 2 `qwen2.5:7b`
+  baseline to the official Ollama `qwen3.5:9b` model.
+- `qwen3.5:4b` is installed as the practical fallback when demo latency or
+  available RAM/VRAM is more important than answer depth.
+- `llama3.2:latest` remains the local validation model because it is small,
+  stable, and already wired into the validation pass.
+- `RCA_MODEL` still controls the generation model, so the system can fall back
+  to the older baseline or another Ollama model if demo latency is too high.
+
+## Demo Step 5: Read-Only Excel RCA Memory
+
+The demo now includes a local past-RCA memory layer backed by:
+
+```text
+data/past_rca_memory_sample_repaired.xlsx
+```
+
+Decision:
+
+- keep the first memory implementation read-only;
+- retrieve only a small number of similar incidents (`RCA_MEMORY_MAX_MATCHES`,
+  default 3);
+- attach matches to `RCAReport.known_issue_matches`;
+- inject a compact evidence pack into the model context;
+- show memory matches in the React UI, HTML report, PDF report, and JSON;
+- record a `[memory]` validation note when matches are retrieved.
+
+Rationale:
+
+- The demo needs to show the model diagnosing a current incident with help from
+  past RCA records, but the system should not mutate historical RCA data during
+  generation.
+- Excel is simple enough for a manager demo and easy for users to inspect.
+- Similar past incidents should guide the RCA, not become automatic truth. The
+  report therefore shows match scores, match reasons, known fixes, and evidence
+  checked so humans can validate relevance.
+
+## Demo Step 5: LangChain/LangGraph Boundary
+
+LangGraph is now used opportunistically for the memory retrieval workflow:
+
+```text
+load_excel_memory -> rank_similar_incidents -> build_evidence_pack
+```
+
+Decision:
+
+- add `langchain-core` and `langgraph` as project dependencies;
+- wrap the Excel memory path in a small LangGraph workflow when installed;
+- keep a deterministic Python fallback so the demo still works if those
+  packages are missing in a runtime environment;
+- do not move the whole RCA pipeline into LangGraph yet.
+
+Rationale:
+
+- This demonstrates the intended orchestration direction without risking the
+  stable bounded RCA pipeline before the demo.
+- Deterministic fallback keeps the feature reliable on local machines where
+  dependency installation or Python environments are imperfect.
+- Larger LangGraph workflows should wait until Graphify/codebase evidence tools
+  are available and tested.
+
+## Demo Step 5: Root Cause Specificity
+
+The RCA quality layer now includes a deterministic `root_cause_specificity`
+check.
+
+Decision:
+
+- flag vague root causes such as "generic configuration issue", "process gap",
+  or broad failure language with no concrete mechanism;
+- instruct prompts to name the failed control, component, config, schema, index,
+  pool, route, secret, scheduler, alert rule, or release gate;
+- feed specificity findings into the existing critique/revise loop.
+
+Rationale:
+
+- The early demo reports were structurally valid but could feel too generic.
+- A report is more useful when the root cause points to something an engineer
+  can inspect or change.
+- This check is cheap, deterministic, and complements the existing
+  symptom-vs-cause and anti-blame checks.
+
 ## Phase 2 Model Choice
 
 Chosen local model: `qwen2.5:7b`.
@@ -111,7 +201,7 @@ The Dockerfile's default command is the FastAPI service (the long-running surfac
 
 ## Phase 4 Live Verification Refresh
 
-`VALIDATION_MODEL` is set locally to `llama3.2:latest`, while generation remains on `qwen2.5:7b`. The two Phase 4 method sample files now contain live Ollama output rather than hand-written renderer fixtures, and validation notes are intentionally preserved even when they criticize the report. The Fishbone live run exposed a method-consistency blind spot, so the deterministic critique layer now checks Fishbone selected-cause/root-cause alignment and Fault-Tree shape limits before revision. Hosted-open validation is still a credential gap, not a code gap: `HostedProvider` is implemented, but `HOSTED_OPEN_BASE_URL`, `HOSTED_OPEN_API_KEY`, and `HOSTED_OPEN_MODEL` are not present in this workspace or process environment.
+`VALIDATION_MODEL` is set locally to `llama3.2:latest`, while generation now defaults to `qwen3.5:9b` for the current demo. The two Phase 4 method sample files contain live Ollama output rather than hand-written renderer fixtures, and validation notes are intentionally preserved even when they criticize the report. The Fishbone live run exposed a method-consistency blind spot, so the deterministic critique layer checks Fishbone selected-cause/root-cause alignment and Fault-Tree shape limits before revision. The Step 5 demo work adds Excel memory retrieval and root-cause-specificity checks on top of that quality layer. Hosted-open validation is still a credential gap, not a code gap: `HostedProvider` is implemented, but `HOSTED_OPEN_BASE_URL`, `HOSTED_OPEN_API_KEY`, and `HOSTED_OPEN_MODEL` are not present in this workspace or process environment.
 
 ## Phase 6 Web UI + HTML Report (Days 36-38)
 

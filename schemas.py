@@ -10,6 +10,30 @@ RCAMethod = Literal["five_why", "fishbone", "fault_tree"]
 RCA_METHODS: tuple[RCAMethod, ...] = ("five_why", "fishbone", "fault_tree")
 
 
+class KnownIssueMatch(BaseModel):
+    """Past RCA memory match surfaced as supporting evidence, not ground truth."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    incident_id: str = Field(description="Identifier of the similar past incident.")
+    date: str | None = Field(default=None, description="Date of the past incident.")
+    system_area: str | None = Field(default=None, description="System area from memory.")
+    service_name: str | None = Field(default=None, description="Service/component from memory.")
+    error_signature: str | None = Field(default=None, description="Error signature from memory.")
+    problem_statement: str = Field(description="Past incident problem statement.")
+    symptoms: str | None = Field(default=None, description="Past incident symptoms.")
+    root_cause: str = Field(description="Known root cause from the past RCA.")
+    immediate_fix: str | None = Field(default=None, description="Known immediate fix.")
+    long_term_fix: str | None = Field(default=None, description="Known long-term fix.")
+    evidence_checked: str | None = Field(default=None, description="Evidence checked in the past RCA.")
+    owner_team: str | None = Field(default=None, description="Owning team from memory.")
+    tags: str | None = Field(default=None, description="Memory tags.")
+    confidence: Literal["low", "medium", "high"] | None = Field(default=None)
+    status: str | None = Field(default=None)
+    similarity_score: float = Field(ge=0, le=1, description="Local retrieval similarity score.")
+    match_reason: str = Field(description="Short explanation of why this memory matched.")
+
+
 class RCAInput(BaseModel):
     """Input accepted by the RCA engine."""
 
@@ -99,6 +123,10 @@ class RCAReport(BaseModel):
         default_factory=list,
         description="Evidence that would improve or confirm the RCA.",
     )
+    known_issue_matches: list[KnownIssueMatch] = Field(
+        default_factory=list,
+        description="Similar past RCA records retrieved from read-only local memory.",
+    )
     validation_notes: list[str] = Field(
         default_factory=list,
         description="Critique or validation observations from the agent loop or validation model.",
@@ -142,6 +170,63 @@ class RCAReport(BaseModel):
         if indexes != expected:
             raise ValueError(f"why_chain indexes must be consecutive: {expected}")
         return self
+
+
+class RCAGenerationReport(BaseModel):
+    """Lean schema requested from the model before engine metadata is attached."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    problem: str = Field(min_length=10, description="Problem statement being analyzed.")
+    summary: str = Field(
+        min_length=20,
+        description="Brief executive summary of the incident and likely cause.",
+    )
+    why_chain: list[WhyEntry] = Field(
+        min_length=3,
+        max_length=7,
+        description="Three to seven deepening why entries, stopping at a durable root cause.",
+    )
+    root_cause: str = Field(
+        min_length=20,
+        description="Underlying process, system, configuration, or operational cause.",
+    )
+    contributing_factors: list[str] = Field(
+        min_length=2,
+        max_length=6,
+        description="Secondary factors that made the incident more likely or severe.",
+    )
+    recommendations: list[str] = Field(
+        min_length=2,
+        max_length=6,
+        description="Concrete mitigations that address the root cause.",
+    )
+    assumptions: list[str] = Field(default_factory=list)
+    evidence_needed: list[str] = Field(default_factory=list)
+    validation_notes: list[str] = Field(default_factory=list)
+    method_detail: dict[str, Any] | None = Field(default=None)
+    confidence: Literal["low", "medium", "high"] = Field(
+        description="Confidence level based on the available evidence.",
+    )
+
+    @field_validator("contributing_factors", "recommendations", "assumptions", "evidence_needed", "validation_notes")
+    @classmethod
+    def reject_blank_items(cls, values: list[str]) -> list[str]:
+        if any(not item.strip() for item in values):
+            raise ValueError("list items cannot be blank")
+        return values
+
+    @model_validator(mode="after")
+    def validate_why_indexes(self) -> "RCAGenerationReport":
+        indexes = [entry.index for entry in self.why_chain]
+        expected = list(range(1, len(self.why_chain) + 1))
+        if indexes != expected:
+            raise ValueError(f"why_chain indexes must be consecutive: {expected}")
+        return self
+
+    def to_rca_report(self) -> RCAReport:
+        """Promote the model draft into the full engine report schema."""
+        return RCAReport.model_validate(self.model_dump())
 
 
 class CritiqueIssue(BaseModel):

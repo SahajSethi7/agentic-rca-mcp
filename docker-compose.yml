@@ -10,7 +10,7 @@ services:
       #   HOSTED_OPEN_API_KEY=... docker compose up
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
       OLLAMA_BASE_URL: http://ollama:11434/v1
-      RCA_MODEL: ${RCA_MODEL:-qwen2.5:7b}
+      RCA_MODEL: ${RCA_MODEL:-qwen3.5:9b}
       RCA_PROMPT_VERSION: ${RCA_PROMPT_VERSION:-v3}
       RCA_VALIDATION_ENABLED: ${RCA_VALIDATION_ENABLED:-true}
       VALIDATION_MODEL: ${VALIDATION_MODEL:-llama3.2:latest}

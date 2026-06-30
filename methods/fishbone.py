@@ -32,7 +32,9 @@ class FishboneMethod(RCAMethod):
             '"Tooling": [...], "Environment": [...], "Data": [...]}, '
             '"selected_category": "<one category>", "selected_cause": "<the cause chosen as root>"}}\n'
             "- each category lists 0-4 short candidate causes; at least 2 categories must be non-empty\n"
-            "- root_cause must be the selected_cause, stated as a system/process failure\n"
+            "- root_cause must be the selected_cause, stated as a specific failed system/process/configuration control\n"
+            "- if past RCA memory matches are shown, mention useful incident IDs in validation_notes or evidence_needed\n"
+            "- put plausible alternative causes in non-selected categories, assumptions, or evidence_needed\n"
             "- also provide a condensed 3-5 step why_chain tracing symptom to the selected cause\n"
             "- include 2-6 contributing_factors drawn from the non-selected categories\n"
             "- include 2-6 recommendations that directly address the selected cause\n"

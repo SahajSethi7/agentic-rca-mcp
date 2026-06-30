@@ -1,7 +1,8 @@
 # Agentic RCA Architecture
 
 This document describes the architecture that exists in the project today. It
-does not include the future Graphify/LangChain plan; that lives separately in
+includes the current read-only Excel past-RCA memory path. The larger future
+Graphify/codebase-aware plan still lives separately in
 `docs/post_demo_graphify_langchain_plan.md`.
 
 ## System Overview
@@ -20,6 +21,7 @@ pipeline:
 CLI / MCP / FastAPI / Web UI
   -> RCAAgent
   -> sanitizer
+  -> optional past RCA memory retrieval
   -> method prompt
   -> model provider
   -> Pydantic RCAReport
@@ -102,14 +104,17 @@ and web jobs. Its current stages are:
 
 1. Build and validate `RCAInput`.
 2. Sanitize input and redact secrets.
-3. Emit a planning event.
-4. Generate an initial `RCAReport` using the configured provider.
-5. Run deterministic critique checks.
-6. Revise with the model when critique finds issues.
-7. Stop after a bounded number of revise rounds or a global time budget.
-8. Run a final validation pass when enabled.
-9. Apply hard guardrails such as confidence capping for unresolved blame.
-10. Return a validated `RCAReport`.
+3. Retrieve similar past incidents from the read-only Excel RCA memory when
+   enabled.
+4. Emit a planning event, including safe substeps for the UI.
+5. Generate an initial `RCAReport` using the configured provider.
+6. Attach retrieved memory matches as `known_issue_matches`.
+7. Run deterministic critique checks.
+8. Revise with the model when critique finds issues.
+9. Stop after a bounded number of revise rounds or a global time budget.
+10. Run a final validation pass when enabled.
+11. Apply hard guardrails such as confidence capping for unresolved blame.
+12. Return a validated `RCAReport`.
 
 The agent is intentionally bounded. It does not run arbitrary tools, mutate the
 filesystem, or loop indefinitely.
@@ -146,6 +151,7 @@ The model must return a structured report with:
 - `recommendations`
 - `assumptions`
 - `evidence_needed`
+- `known_issue_matches`
 - `validation_notes`
 - `method_detail`
 - `confidence`
@@ -235,8 +241,58 @@ HOSTED_OPEN_MODEL
 VALIDATION_MODEL
 ```
 
-The default local generation model is `qwen2.5:7b`. The default validation
-model in Docker is `llama3.2:latest`.
+The default local generation model is `qwen3.5:9b`. The default validation
+model in Docker is `llama3.2:latest`. `qwen3.5:4b` is installed as a faster
+fallback option for constrained demo runs.
+
+## Past RCA Memory
+
+`memory.py` implements the current read-only memory layer.
+
+The configured workbook is:
+
+```text
+data/past_rca_memory_sample_repaired.xlsx
+```
+
+The expected sheet is `Past RCA Memory`, with columns such as:
+
+- `incident_id`
+- `date`
+- `system_area`
+- `service_name`
+- `error_signature`
+- `problem_statement`
+- `symptoms`
+- `root_cause`
+- `immediate_fix`
+- `long_term_fix`
+- `evidence_checked`
+- `owner_team`
+- `tags`
+- `confidence`
+- `status`
+
+The retrieval path is intentionally local and bounded:
+
+```text
+RCAInput
+  -> load Excel memory
+  -> rank similar incidents
+  -> build compact evidence pack
+  -> append evidence pack to prompt context
+  -> attach matches to RCAReport.known_issue_matches
+```
+
+If `langchain-core` and `langgraph` are installed, the same load/rank/build
+steps run inside a small LangGraph workflow. If they are unavailable, the
+system uses the deterministic Python scorer directly. Either way, the workbook
+is read-only during RCA generation.
+
+Memory records are treated as supporting evidence, not ground truth. The model
+is instructed not to blindly copy a past fix, and the UI/report artifacts show
+match score, match reason, known root cause, immediate fix, and evidence
+checked so reviewers can judge similarity.
 
 ## Quality Layer
 
@@ -249,6 +305,7 @@ validation.
 
 - non-deepening why chains
 - root causes that restate the symptom
+- root causes that are too generic to drive action
 - blame language aimed at individuals
 - Fishbone and Fault Tree method consistency
 
@@ -334,6 +391,9 @@ sections as the PDF and can include a Mermaid why-chain diagram.
 The React UI renders reports from the full `RCAReport` JSON, while the saved
 HTML artifact remains available for standalone viewing.
 
+When past RCA memory matches exist, React, HTML, PDF, and JSON all surface the
+same known-issue evidence through `known_issue_matches`.
+
 ## Evaluation And Tests
 
 The eval harness lives in `eval/`.
@@ -394,6 +454,8 @@ What it does today:
 
 - generates structured RCA reports
 - supports three RCA methods
+- retrieves similar past RCA records from a read-only Excel workbook
+- can use a small LangGraph workflow for memory retrieval when installed
 - uses local or hosted OpenAI-compatible model providers
 - validates model output with Pydantic
 - runs deterministic critique and bounded revision
@@ -405,7 +467,8 @@ What it does today:
 What it does not do yet:
 
 - index or understand entire source repositories
-- use Graphify or LangChain in the runtime path
+- use Graphify or repository knowledge graphs in the runtime path
+- use LangGraph as the durable end-to-end RCA workflow executor
 - maintain durable database-backed job history
 - perform multi-user authentication or tenancy
 - execute autonomous remediation actions

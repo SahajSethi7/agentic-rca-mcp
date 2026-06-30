@@ -30,9 +30,9 @@ from reportlab.platypus import (
 
 from schemas import RCAReport
 
-ACCENT = colors.HexColor("#1f3a5f")
-LIGHT_ROW = colors.HexColor("#eef2f7")
-RULE_GREY = colors.HexColor("#c8cfd8")
+ACCENT = colors.HexColor("#ea580c")
+LIGHT_ROW = colors.HexColor("#fff7ed")
+RULE_GREY = colors.HexColor("#fed7aa")
 FOOTER_GREY = colors.HexColor("#6b7280")
 
 CONFIDENCE_COLORS = {
@@ -154,7 +154,7 @@ def _heading(text: str, styles: dict[str, ParagraphStyle]) -> list:
 def _confidence_chip(report: RCAReport, styles: dict[str, ParagraphStyle]) -> Table:
     color = CONFIDENCE_COLORS.get(report.confidence, FOOTER_GREY)
     chip = Table(
-        [[Paragraph(f"CONFIDENCE: {report.confidence.upper()}", styles["chip"])]],
+        [[Paragraph(f"MODEL VERDICT: {report.confidence.upper()}", styles["chip"])]],
         colWidths=[52 * mm],
     )
     chip.setStyle(
@@ -223,8 +223,8 @@ def _fishbone_section(detail: dict[str, Any], styles: dict[str, ParagraphStyle])
         ]
     ]
     for category, causes in categories.items():
-        label = f"{category} ✱" if category == selected_category else str(category)
-        cause_text = "; ".join(str(c) for c in causes) if causes else "—"
+        label = f"{category} (selected)" if category == selected_category else str(category)
+        cause_text = "; ".join(str(c) for c in causes) if causes else "-"
         rows.append(
             [Paragraph(label, styles["cell"]), Paragraph(cause_text, styles["cell"])]
         )
@@ -248,7 +248,7 @@ def _fishbone_section(detail: dict[str, Any], styles: dict[str, ParagraphStyle])
         flow.append(Spacer(1, 4))
         flow.append(
             Paragraph(
-                f"✱ Selected root cause ({selected_category}): {selected_cause}",
+                f"Selected root cause ({selected_category}): {selected_cause}",
                 styles["body"],
             )
         )
@@ -266,14 +266,14 @@ def _fault_tree_section(detail: dict[str, Any], styles: dict[str, ParagraphStyle
         flow.append(Paragraph(f"[{gate_type}] {event}", styles["tree"]))
         for child in gate.get("children", []) or []:
             flow.append(
-                Paragraph(f"— {child}", styles["tree"]),
+                Paragraph(f"- {child}", styles["tree"]),
             )
     basic = detail.get("basic_causes", []) or []
     if basic:
         flow.append(Spacer(1, 4))
         flow.append(Paragraph("<b>Basic causes:</b>", styles["body"]))
         for cause in basic:
-            flow.append(Paragraph(f"• {cause}", styles["bullet"]))
+            flow.append(Paragraph(f"- {cause}", styles["bullet"]))
     return flow
 
 
@@ -287,8 +287,73 @@ def _string_list_section(
         return []
     flow: list = list(_heading(title, styles))
     for index, item in enumerate(items, start=1):
-        prefix = f"{index}." if numbered else "•"
+        prefix = f"{index}." if numbered else "-"
         flow.append(Paragraph(f"{prefix} {item}", styles["bullet"]))
+    return flow
+
+
+def _memory_section(report: RCAReport, styles: dict[str, ParagraphStyle]) -> list:
+    matches = report.known_issue_matches
+    if not matches:
+        return []
+
+    total = len(matches)
+    visible = matches[:3]
+    top = visible[0]
+    flow: list = list(_heading("Past RCA Memory", styles))
+    flow.append(
+        Paragraph(
+            f"Found {total} matching past RCA record{'s' if total != 1 else ''}. "
+            f"Showing top {len(visible)} here; download the Excel workbook for the full list.",
+            styles["body"],
+        )
+    )
+    rows: list[list] = [
+        [
+            Paragraph("Incident", styles["cell_header"]),
+            Paragraph("Score", styles["cell_header"]),
+            Paragraph("Service", styles["cell_header"]),
+            Paragraph("Date", styles["cell_header"]),
+        ],
+        [
+            Paragraph(top.incident_id, styles["cell"]),
+            Paragraph(f"{round(top.similarity_score * 100)}% match", styles["cell"]),
+            Paragraph(top.service_name or "not recorded", styles["cell"]),
+            Paragraph(top.date or "not recorded", styles["cell"]),
+        ],
+    ]
+    table = Table(rows, colWidths=[38 * mm, 32 * mm, 54 * mm, 36 * mm], repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), ACCENT),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, LIGHT_ROW]),
+                ("GRID", (0, 0), (-1, -1), 0.4, RULE_GREY),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    flow.append(table)
+    flow.append(Spacer(1, 5))
+    flow.append(Paragraph(f"<b>Known root cause:</b> {top.root_cause}", styles["body"]))
+    if top.immediate_fix:
+        flow.append(Paragraph(f"<b>Immediate fix:</b> {top.immediate_fix}", styles["body"]))
+    if top.evidence_checked:
+        flow.append(Paragraph(f"<b>Evidence checked:</b> {top.evidence_checked}", styles["body"]))
+    flow.append(Paragraph(f"<b>Match reason:</b> {top.match_reason}", styles["body"]))
+
+    for match in visible[1:]:
+        flow.append(
+            Paragraph(
+                f"- {match.incident_id} ({round(match.similarity_score * 100)}%): "
+                f"{match.root_cause}",
+                styles["bullet"],
+            )
+        )
     return flow
 
 
@@ -301,7 +366,7 @@ def _footer(canvas, doc) -> None:
     canvas.setFont("Helvetica", 7)
     canvas.setFillColor(FOOTER_GREY)
     canvas.drawString(
-        18 * mm, 12 * mm, "Agentic RCA MCP Server — AI-generated draft, verify before acting"
+        18 * mm, 12 * mm, "RCA Assistant - AI-generated draft, verify before acting"
     )
     canvas.drawRightString(width - 18 * mm, 12 * mm, f"Page {doc.page}")
     canvas.restoreState()
@@ -320,8 +385,8 @@ def build_pdf(report: RCAReport, output_path: str | Path) -> Path:
         rightMargin=18 * mm,
         topMargin=16 * mm,
         bottomMargin=22 * mm,
-        title="Agentic RCA Report",
-        author="Agentic RCA MCP Server",
+        title="RCA Assistant Report",
+        author="RCA Assistant",
     )
 
     generated_at = datetime.now().strftime("%d %b %Y %H:%M")
@@ -334,10 +399,12 @@ def build_pdf(report: RCAReport, output_path: str | Path) -> Path:
         meta_bits.append(f"prompt: {report.prompt_version}")
     if report.latency_seconds is not None:
         meta_bits.append(f"latency: {report.latency_seconds}s")
+    if report.known_issue_matches:
+        meta_bits.append(f"memory: {len(report.known_issue_matches)} matches")
 
     story: list = [
-        Paragraph("Agentic Root Cause Analysis", styles["title"]),
-        Paragraph(" &nbsp;·&nbsp; ".join(meta_bits), styles["meta"]),
+        Paragraph("RCA Assistant Report", styles["title"]),
+        Paragraph(" &nbsp;-&nbsp; ".join(meta_bits), styles["meta"]),
         _confidence_chip(report, styles),
         Spacer(1, 6),
         HRFlowable(width="100%", thickness=1.2, color=ACCENT, spaceAfter=10),
@@ -348,6 +415,8 @@ def build_pdf(report: RCAReport, output_path: str | Path) -> Path:
 
     story += _heading("Executive Summary", styles)
     story.append(Paragraph(report.summary, styles["body"]))
+
+    story += _memory_section(report, styles)
 
     story += _heading("Why Chain", styles)
     story.append(_why_table(report, styles))
