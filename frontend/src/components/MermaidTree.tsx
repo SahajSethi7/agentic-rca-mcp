@@ -13,10 +13,10 @@ function FlowCard({
 }) {
   const styles = {
     default: "border-slate-200 bg-white",
-    problem: "border-emerald-200 bg-emerald-50",
+    problem: "border-att-200 bg-att-50",
     root: "border-command bg-command text-white",
   }[tone];
-  const eyebrowStyle = tone === "root" ? "text-white/70" : "text-command-teal";
+  const eyebrowStyle = tone === "root" ? "text-white/70" : "text-att-700";
   const titleStyle = tone === "root" ? "text-white" : "text-ink";
   const bodyStyle = tone === "root" ? "text-white/86" : "text-ink-soft";
 
@@ -34,7 +34,7 @@ function Connector() {
     <div className="flex items-center justify-center py-1.5" aria-hidden="true">
       <div className="flex flex-col items-center">
         <span className="h-5 w-px bg-slate-300" />
-        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-command-teal">
+        <span className="rounded-full border border-att-200 bg-att-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-att-700">
           why
         </span>
         <span className="h-5 w-px bg-slate-300" />

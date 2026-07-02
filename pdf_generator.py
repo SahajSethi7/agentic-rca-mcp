@@ -30,15 +30,29 @@ from reportlab.platypus import (
 
 from schemas import RCAReport
 
-ACCENT = colors.HexColor("#ea580c")
-LIGHT_ROW = colors.HexColor("#fff7ed")
-RULE_GREY = colors.HexColor("#fed7aa")
-FOOTER_GREY = colors.HexColor("#6b7280")
+ATT_BLACK = colors.HexColor("#000000")
+ATT_NAVY = colors.HexColor("#061a2f")
+ATT_DARK_BLUE = colors.HexColor("#003b5c")
+ATT_BLUE = colors.HexColor("#009fdb")
+ATT_BLUE_DARK = colors.HexColor("#0073a8")
+ATT_BLUE_700 = colors.HexColor("#005a8f")
+ATT_BLUE_50 = colors.HexColor("#eaf8fe")
+ATT_BLUE_100 = colors.HexColor("#d3f0fc")
+ATT_BLUE_200 = colors.HexColor("#9fe2f6")
+INK = colors.HexColor("#0b1720")
+INK_SOFT = colors.HexColor("#3d5265")
+INK_MUTED = colors.HexColor("#687789")
+LINE_GREY = colors.HexColor("#d6dee6")
+
+ACCENT = ATT_BLUE
+LIGHT_ROW = ATT_BLUE_50
+RULE_GREY = ATT_BLUE_200
+FOOTER_GREY = INK_MUTED
 
 CONFIDENCE_COLORS = {
-    "high": colors.HexColor("#1e7a3d"),
-    "medium": colors.HexColor("#b06f00"),
-    "low": colors.HexColor("#b3261e"),
+    "high": ATT_BLUE_DARK,
+    "medium": ATT_BLUE_700,
+    "low": ATT_NAVY,
 }
 
 METHOD_LABELS = {
@@ -62,7 +76,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             parent=base["Title"],
             fontName="Helvetica-Bold",
             fontSize=20,
-            textColor=ACCENT,
+            textColor=ATT_NAVY,
             spaceAfter=2,
             alignment=TA_LEFT,
         ),
@@ -79,7 +93,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             parent=base["Heading2"],
             fontName="Helvetica-Bold",
             fontSize=12.5,
-            textColor=ACCENT,
+            textColor=ATT_BLUE_DARK,
             spaceBefore=14,
             spaceAfter=4,
         ),
@@ -89,6 +103,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             fontName="Helvetica",
             fontSize=10,
             leading=14,
+            textColor=INK_SOFT,
             spaceAfter=6,
         ),
         "cell": ParagraphStyle(
@@ -97,6 +112,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             fontName="Helvetica",
             fontSize=9,
             leading=12,
+            textColor=INK,
         ),
         "cell_header": ParagraphStyle(
             "RCACellHeader",
@@ -120,7 +136,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             fontName="Helvetica-Bold",
             fontSize=10.5,
             leading=15,
-            textColor=ACCENT,
+            textColor=ATT_NAVY,
         ),
         "bullet": ParagraphStyle(
             "RCABullet",
@@ -129,6 +145,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             fontSize=10,
             leading=14,
             leftIndent=10,
+            textColor=INK_SOFT,
             spaceAfter=3,
         ),
         "tree": ParagraphStyle(
@@ -138,6 +155,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             fontSize=9.5,
             leading=13,
             leftIndent=14,
+            textColor=INK_SOFT,
             spaceAfter=2,
         ),
     }
@@ -147,7 +165,7 @@ def _heading(text: str, styles: dict[str, ParagraphStyle]) -> list:
     """A section heading with a divider rule underneath."""
     return [
         Paragraph(text, styles["heading"]),
-        HRFlowable(width="100%", thickness=0.7, color=RULE_GREY, spaceAfter=6),
+        HRFlowable(width="100%", thickness=0.7, color=ATT_BLUE_100, spaceAfter=6),
     ]
 
 
@@ -195,9 +213,9 @@ def _why_table(report: RCAReport, styles: dict[str, ParagraphStyle]) -> Table:
     table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), ACCENT),
+                ("BACKGROUND", (0, 0), (-1, 0), ATT_BLUE_700),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, LIGHT_ROW]),
-                ("GRID", (0, 0), (-1, -1), 0.4, RULE_GREY),
+                ("GRID", (0, 0), (-1, -1), 0.4, ATT_BLUE_100),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 5),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 5),
@@ -232,9 +250,9 @@ def _fishbone_section(detail: dict[str, Any], styles: dict[str, ParagraphStyle])
     table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), ACCENT),
+                ("BACKGROUND", (0, 0), (-1, 0), ATT_BLUE_700),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, LIGHT_ROW]),
-                ("GRID", (0, 0), (-1, -1), 0.4, RULE_GREY),
+                ("GRID", (0, 0), (-1, -1), 0.4, ATT_BLUE_100),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 5),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 5),
@@ -326,9 +344,9 @@ def _memory_section(report: RCAReport, styles: dict[str, ParagraphStyle]) -> lis
     table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), ACCENT),
+                ("BACKGROUND", (0, 0), (-1, 0), ATT_BLUE_700),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, LIGHT_ROW]),
-                ("GRID", (0, 0), (-1, -1), 0.4, RULE_GREY),
+                ("GRID", (0, 0), (-1, -1), 0.4, ATT_BLUE_100),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 5),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 5),
@@ -360,7 +378,7 @@ def _memory_section(report: RCAReport, styles: dict[str, ParagraphStyle]) -> lis
 def _footer(canvas, doc) -> None:
     canvas.saveState()
     width, _ = A4
-    canvas.setStrokeColor(RULE_GREY)
+    canvas.setStrokeColor(ATT_BLUE_100)
     canvas.setLineWidth(0.5)
     canvas.line(18 * mm, 16 * mm, width - 18 * mm, 16 * mm)
     canvas.setFont("Helvetica", 7)
@@ -407,7 +425,7 @@ def build_pdf(report: RCAReport, output_path: str | Path) -> Path:
         Paragraph(" &nbsp;-&nbsp; ".join(meta_bits), styles["meta"]),
         _confidence_chip(report, styles),
         Spacer(1, 6),
-        HRFlowable(width="100%", thickness=1.2, color=ACCENT, spaceAfter=10),
+        HRFlowable(width="100%", thickness=1.2, color=ATT_BLUE, spaceAfter=10),
     ]
 
     story += _heading("Problem", styles)
@@ -437,7 +455,7 @@ def build_pdf(report: RCAReport, output_path: str | Path) -> Path:
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, -1), LIGHT_ROW),
-                ("BOX", (0, 0), (-1, -1), 0.8, ACCENT),
+                ("BOX", (0, 0), (-1, -1), 0.8, ATT_BLUE_200),
                 ("LEFTPADDING", (0, 0), (-1, -1), 8),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 8),
                 ("TOPPADDING", (0, 0), (-1, -1), 6),

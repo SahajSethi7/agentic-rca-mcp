@@ -28,7 +28,7 @@ function Guardrail({ title, detail }: { title: string; detail: string }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
       <div className="flex items-center gap-2">
-        <span className="grid h-6 w-6 place-items-center rounded-md bg-emerald-50 text-emerald-700"><CheckIcon className="h-4 w-4" /></span>
+        <span className="grid h-6 w-6 place-items-center rounded-md bg-att-50 text-att-700"><CheckIcon className="h-4 w-4" /></span>
         <p className="text-[13px] font-black text-ink">{title}</p>
       </div>
       <p className="mt-2 text-[12px] leading-5 text-ink-muted">{detail}</p>
@@ -77,9 +77,9 @@ export default function RunCard({
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-600">Live Run</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-att-700">Live Run</p>
               <span className={`rounded-md px-2 py-1 text-[11px] font-black ${
-                run.error ? "bg-red-50 text-red-700" : run.report ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"
+                run.error ? "bg-red-50 text-red-700" : run.report ? "bg-att-50 text-att-700" : "bg-att-50 text-att-700"
               }`}>
                 {statusLabel(run)}
               </span>
@@ -91,7 +91,7 @@ export default function RunCard({
             <button
               type="button"
               onClick={() => onOpenReport(run.index)}
-              className="inline-flex h-10 items-center justify-center rounded-md bg-orange-500 px-3 text-[13px] font-black text-white transition hover:bg-orange-600"
+              className="inline-flex h-10 items-center justify-center rounded-md bg-att-500 px-3 text-[13px] font-black text-white transition hover:bg-att-600"
             >
               Open RCA Report
             </button>
@@ -150,10 +150,10 @@ export default function RunCard({
             <div className="mt-4 border-t border-slate-200 pt-4">
               <div className="mb-2 flex items-center justify-between text-[12px] font-black">
                 <span className="text-ink-muted">{stageOrdinal(run.stage)}</span>
-                <span className="text-orange-700">{progress}%</span>
+                <span className="text-att-700">{progress}%</span>
               </div>
               <div className="h-2 rounded-full bg-slate-100">
-                <div className="h-2 rounded-full bg-gradient-to-r from-orange-500 via-teal-500 to-indigo-500 transition-all" style={{ width: `${progress}%` }} />
+                <div className="h-2 rounded-full bg-gradient-to-r from-att-500 via-att-400 to-att-700 transition-all" style={{ width: `${progress}%` }} />
               </div>
             </div>
           </div>
@@ -173,7 +173,7 @@ export default function RunCard({
                 </div>
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.12em] text-ink-muted">Confidence</p>
-                  <p className="mt-1 text-[13px] font-black capitalize text-emerald-700">{run.report.confidence}</p>
+                  <p className="mt-1 text-[13px] font-black capitalize text-att-700">{run.report.confidence}</p>
                 </div>
               </div>
             ) : (
@@ -182,20 +182,20 @@ export default function RunCard({
           </div>
 
           {run.report && (
-            <div className="rounded-lg border border-orange-200 bg-orange-50 p-5">
-              <p className="text-[13px] font-black text-orange-800">Analysis complete</p>
-              <p className="mt-1 text-[12.5px] leading-5 text-orange-800">Artifacts are ready for this method.</p>
+            <div className="rounded-lg border border-att-200 bg-att-50 p-5">
+              <p className="text-[13px] font-black text-att-800">Analysis complete</p>
+              <p className="mt-1 text-[12.5px] leading-5 text-att-800">Artifacts are ready for this method.</p>
               <button
                 type="button"
                 onClick={() => onOpenReport(run.index)}
-                className="mt-3 h-10 w-full rounded-md bg-orange-500 px-3 text-[13px] font-black text-white transition hover:bg-orange-600"
+                className="mt-3 h-10 w-full rounded-md bg-att-500 px-3 text-[13px] font-black text-white transition hover:bg-att-600"
               >
                 Open RCA Report
               </button>
               <button
                 type="button"
                 onClick={onOpenCompare}
-                className="mt-2 h-10 w-full rounded-md border border-orange-200 bg-white px-3 text-[13px] font-black text-orange-700 transition hover:bg-orange-50"
+                className="mt-2 h-10 w-full rounded-md border border-att-200 bg-white px-3 text-[13px] font-black text-att-700 transition hover:bg-att-50"
               >
                 Compare Methods
               </button>

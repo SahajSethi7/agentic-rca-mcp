@@ -28,7 +28,7 @@ function Section({
     <section className="rounded-lg border border-slate-200 bg-white shadow-card">
       <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3">
         {number != null && (
-          <span className="grid h-7 w-7 place-items-center rounded-md bg-blue-700 text-[13px] font-black text-white">{number}</span>
+          <span className="grid h-7 w-7 place-items-center rounded-md bg-att-600 text-[13px] font-black text-white">{number}</span>
         )}
         <h2 className="min-w-0 flex-1 text-[15px] font-black text-ink">{title}</h2>
         {action}
@@ -48,11 +48,11 @@ function SimpleList({ items, variant = "dot" }: { items: string[]; variant?: "do
       {items.map((item, index) => (
         <li key={`${item}-${index}`} className="flex gap-2.5 text-[13.5px] leading-5 text-ink-soft">
           {variant === "num" ? (
-            <span className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-md bg-blue-50 text-[11px] font-black text-blue-700">{index + 1}</span>
+            <span className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-md bg-att-50 text-[11px] font-black text-att-700">{index + 1}</span>
           ) : variant === "check" ? (
-            <span className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-md bg-emerald-50 text-emerald-700"><CheckIcon className="h-3.5 w-3.5" /></span>
+            <span className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-md bg-att-50 text-att-700"><CheckIcon className="h-3.5 w-3.5" /></span>
           ) : (
-            <span className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-blue-600" />
+            <span className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-att-600" />
           )}
           <span className="break-words">{item}</span>
         </li>
@@ -63,8 +63,8 @@ function SimpleList({ items, variant = "dot" }: { items: string[]; variant?: "do
 
 function ConfidenceVerdict({ confidence }: { confidence: string }) {
   return (
-    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
-      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-emerald-700">Model confidence verdict</p>
+    <div className="rounded-lg border border-att-200 bg-att-50 px-4 py-3">
+      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-att-700">Model confidence verdict</p>
       <p className="mt-2 text-[22px] font-black capitalize text-ink">{confidence}</p>
     </div>
   );
@@ -81,10 +81,10 @@ function WhyChainVisual({ report }: { report: RCAReport }) {
           return (
             <div key={entry.index} className="flex min-w-[180px] flex-1 items-stretch gap-3">
               <div className={`flex flex-1 flex-col rounded-lg border px-3 py-3 ${
-                last ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white"
+                last ? "border-att-300 bg-att-50" : "border-slate-200 bg-white"
               }`}>
                 <span className={`mb-2 grid h-7 w-7 place-items-center rounded-md text-[12px] font-black ${
-                  last ? "bg-blue-700 text-white" : "bg-slate-100 text-ink"
+                  last ? "bg-att-600 text-white" : "bg-slate-100 text-ink"
                 }`}>
                   {entry.index}
                 </span>
@@ -109,10 +109,10 @@ function FishboneVisual({ detail, rootCause }: { detail: FishboneDetail; rootCau
           {entries.map(([category, causes]) => {
             const selected = category === detail.selected_category;
             return (
-              <div key={category} className={`rounded-lg border bg-white px-3 py-3 ${selected ? "border-blue-300 ring-2 ring-blue-100" : "border-slate-200"}`}>
+              <div key={category} className={`rounded-lg border bg-white px-3 py-3 ${selected ? "border-att-300 ring-2 ring-att-100" : "border-slate-200"}`}>
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[13px] font-black text-ink">{category}</p>
-                  {selected && <span className="rounded-md bg-blue-50 px-2 py-1 text-[10.5px] font-black text-blue-700">Selected</span>}
+                  {selected && <span className="rounded-md bg-att-50 px-2 py-1 text-[10.5px] font-black text-att-700">Selected</span>}
                 </div>
                 <ul className="mt-2 space-y-1.5">
                   {(Array.isArray(causes) ? causes : [causes]).map((cause, index) => (
@@ -134,7 +134,7 @@ function FishboneVisual({ detail, rootCause }: { detail: FishboneDetail; rootCau
         </div>
       </div>
       {detail.selected_cause && (
-        <p className="mt-3 rounded-md border border-blue-200 bg-white px-3 py-2 text-[12.5px] leading-5 text-blue-800">
+        <p className="mt-3 rounded-md border border-att-200 bg-white px-3 py-2 text-[12.5px] leading-5 text-att-800">
           Selected cause: <b>{detail.selected_cause}</b>
         </p>
       )}
@@ -146,8 +146,8 @@ function FaultTreeVisual({ detail }: { detail: FaultTreeDetail }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
       <div className="mx-auto max-w-[900px]">
-        <div className="mx-auto max-w-[420px] rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-center">
-          <p className="text-[11px] font-black uppercase tracking-[0.12em] text-blue-700">Top event</p>
+        <div className="mx-auto max-w-[420px] rounded-lg border border-att-300 bg-att-50 px-4 py-3 text-center">
+          <p className="text-[11px] font-black uppercase tracking-[0.12em] text-att-700">Top event</p>
           <p className="mt-1 break-words text-[14px] font-black text-ink">{detail.top_event}</p>
         </div>
         <div className="mx-auto h-8 w-px bg-slate-300" />
@@ -156,7 +156,7 @@ function FaultTreeVisual({ detail }: { detail: FaultTreeDetail }) {
             <div key={`${gate.event}-${index}`} className="rounded-lg border border-slate-200 bg-white px-4 py-3">
               <div className="flex items-center gap-2">
                 <span className={`rounded-md px-2 py-1 font-mono text-[11px] font-black text-white ${
-                  String(gate.type).toUpperCase() === "AND" ? "bg-command" : "bg-blue-700"
+                  String(gate.type).toUpperCase() === "AND" ? "bg-command" : "bg-att-600"
                 }`}>
                   {String(gate.type).toUpperCase()}
                 </span>
@@ -190,15 +190,15 @@ function KnownIssueMemory({ matches }: { matches: KnownIssueMatch[] }) {
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3">
+      <div className="rounded-lg border border-att-200 bg-att-50 px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-md bg-teal-700 px-2 py-1 font-mono text-[11px] font-black text-white">{top.incident_id}</span>
-          <span className="rounded-md bg-white px-2 py-1 text-[11px] font-black text-teal-800 ring-1 ring-teal-100">{scoreLabel(top.similarity_score)} match</span>
-          {top.service_name && <span className="rounded-md bg-white px-2 py-1 text-[11px] font-bold text-ink-muted ring-1 ring-teal-100">{top.service_name}</span>}
+          <span className="rounded-md bg-att-700 px-2 py-1 font-mono text-[11px] font-black text-white">{top.incident_id}</span>
+          <span className="rounded-md bg-white px-2 py-1 text-[11px] font-black text-att-800 ring-1 ring-att-100">{scoreLabel(top.similarity_score)} match</span>
+          {top.service_name && <span className="rounded-md bg-white px-2 py-1 text-[11px] font-bold text-ink-muted ring-1 ring-att-100">{top.service_name}</span>}
         </div>
-        <p className="mt-3 text-[12px] font-black uppercase tracking-[0.1em] text-teal-800">Known root cause</p>
+        <p className="mt-3 text-[12px] font-black uppercase tracking-[0.1em] text-att-800">Known root cause</p>
         <p className="mt-1 break-words text-[14px] font-bold leading-5 text-ink">{top.root_cause}</p>
-        <p className="mt-2 break-words text-[12.5px] leading-5 text-teal-900">{top.match_reason}</p>
+        <p className="mt-2 break-words text-[12.5px] leading-5 text-att-900">{top.match_reason}</p>
       </div>
       {matches.length > visible.length && (
         <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-[12.5px] font-semibold text-ink-muted">
@@ -207,7 +207,7 @@ function KnownIssueMemory({ matches }: { matches: KnownIssueMatch[] }) {
       )}
       {rest.map((match) => (
         <div key={match.incident_id} className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <p className="font-mono text-[12px] font-black text-teal-700">{match.incident_id} - {scoreLabel(match.similarity_score)} match</p>
+          <p className="font-mono text-[12px] font-black text-att-700">{match.incident_id} - {scoreLabel(match.similarity_score)} match</p>
           <p className="mt-1 break-words text-[13px] font-semibold leading-5 text-ink-soft">{match.root_cause}</p>
         </div>
       ))}
@@ -230,7 +230,7 @@ function ExportLink({ href, label, detail, download }: { href?: string; label: s
       target={download ? undefined : "_blank"}
       rel={download ? undefined : "noreferrer"}
       download={download}
-      className="block rounded-lg border border-slate-200 bg-white px-3 py-3 transition hover:border-orange-200 hover:bg-orange-50"
+      className="block rounded-lg border border-slate-200 bg-white px-3 py-3 transition hover:border-att-200 hover:bg-att-50"
     >
       <p className="text-[13px] font-black text-ink">{label}</p>
       <p className="mt-1 text-[12px] text-ink-muted">{detail}</p>
@@ -275,8 +275,8 @@ export default function Report({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-600">RCA Report</p>
-                <span className="rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-black capitalize text-emerald-700">{report.confidence} confidence</span>
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-att-700">RCA Report</p>
+                <span className="rounded-md bg-att-50 px-2 py-1 text-[11px] font-black capitalize text-att-700">{report.confidence} confidence</span>
               </div>
               <h1 className="mt-2 max-w-[900px] break-words text-[28px] font-black leading-tight tracking-tight text-ink">
                 {report.problem || payload?.problem_statement || "Root cause analysis report"}
@@ -284,12 +284,12 @@ export default function Report({
             </div>
             <div className="flex flex-wrap gap-2">
               {onBack && (
-                <button type="button" onClick={onBack} className="h-10 rounded-md border border-slate-300 bg-white px-3 text-[13px] font-bold text-ink-soft hover:border-orange-200 hover:text-orange-700">
+                <button type="button" onClick={onBack} className="h-10 rounded-md border border-slate-300 bg-white px-3 text-[13px] font-bold text-ink-soft hover:border-att-200 hover:text-att-700">
                   Back
                 </button>
               )}
               {onRunAgain && (
-                <button type="button" onClick={onRunAgain} className="h-10 rounded-md bg-orange-500 px-3 text-[13px] font-black text-white hover:bg-orange-600">
+                <button type="button" onClick={onRunAgain} className="h-10 rounded-md bg-att-500 px-3 text-[13px] font-black text-white hover:bg-att-600">
                   Run Another Analysis
                 </button>
               )}
@@ -320,8 +320,8 @@ export default function Report({
             <p className="break-words text-[14px] leading-6 text-ink-soft">{report.problem}</p>
           </Section>
           <Section number={3} title="Root Cause">
-            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.12em] text-blue-700">Identified cause</p>
+            <div className="rounded-lg border border-att-200 bg-att-50 px-4 py-3">
+              <p className="text-[11px] font-black uppercase tracking-[0.12em] text-att-700">Identified cause</p>
               <p className="mt-1 break-words text-[15px] font-black leading-6 text-ink">{report.root_cause}</p>
             </div>
           </Section>
@@ -404,7 +404,7 @@ export default function Report({
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-card">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-[15px] font-black text-ink">Quality Checks</h2>
-            <span className="rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700">
+            <span className="rounded-md bg-att-50 px-2 py-1 text-[11px] font-black text-att-700">
               {qualityChecks.filter(([, ok]) => ok).length}/{qualityChecks.length} passed
             </span>
           </div>
@@ -412,13 +412,13 @@ export default function Report({
             {qualityChecks.map(([label, ok]) => (
               <div key={label as string} className="flex items-center justify-between gap-3 text-[12.5px]">
                 <span className="font-bold text-ink-soft">{label}</span>
-                <span className={`rounded-md px-2 py-1 text-[11px] font-black ${ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                <span className={`rounded-md px-2 py-1 text-[11px] font-black ${ok ? "bg-att-50 text-att-700" : "bg-amber-50 text-amber-700"}`}>
                   {ok ? "Passed" : "Review"}
                 </span>
               </div>
             ))}
           </div>
-          <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50 px-3 py-3 text-[12px] leading-5 text-teal-800">
+          <div className="mt-4 rounded-lg border border-att-200 bg-att-50 px-3 py-3 text-[12px] leading-5 text-att-800">
             Guardrails include secret redaction, prompt fencing, schema validation, bounded retries, restricted writes, and local audit logging.
           </div>
         </section>

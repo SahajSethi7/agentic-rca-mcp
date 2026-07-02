@@ -52,7 +52,7 @@ function activityFromStage(e: Extract<SSEvent, { type: "stage" }>): ActivityItem
 function ShellLogo() {
   return (
     <div className="flex items-center gap-3 px-5 py-5">
-      <div className="relative grid h-10 w-10 place-items-center rounded-lg bg-blue-600 text-white shadow-[0_14px_32px_-18px_rgba(37,99,235,.9)]">
+      <div className="relative grid h-10 w-10 place-items-center rounded-lg bg-att-500 text-white shadow-[0_14px_32px_-18px_rgba(0,159,219,.9)]">
         <span className="text-[23px] font-black leading-none">+</span>
       </div>
       <div className="min-w-0">
@@ -77,7 +77,7 @@ function Sidebar({
   provider: string;
 }) {
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 hidden w-[264px] flex-col bg-gradient-to-b from-[#052e2b] via-[#0f2543] to-[#2d155f] text-white shadow-[18px_0_36px_-34px_rgba(15,23,42,.85)] lg:flex">
+    <aside className="fixed inset-y-0 left-0 z-40 hidden w-[264px] flex-col bg-gradient-to-b from-[#000000] via-[#061a2f] to-[#003b5c] text-white shadow-[18px_0_36px_-34px_rgba(6,26,47,.9)] lg:flex">
       <ShellLogo />
       <div className="mx-5 h-px bg-white/10" />
       <nav className="flex-1 space-y-1 px-3 py-5">
@@ -90,7 +90,7 @@ function Sidebar({
               onClick={() => onNavigate(item.id)}
               className={`flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-[14px] font-bold transition ${
                 selected
-                  ? "bg-orange-500 text-white shadow-[0_10px_24px_-18px_rgba(249,115,22,.9)]"
+                  ? "bg-att-500 text-white shadow-[0_10px_24px_-18px_rgba(0,159,219,.9)]"
                   : "text-slate-300 hover:bg-white/10 hover:text-white"
               }`}
             >
@@ -109,7 +109,7 @@ function Sidebar({
           <div className="mt-3 space-y-2 text-[12.5px] font-semibold text-slate-300">
             {["Data stays on this device", "Model server required", "Outputs written locally"].map((item) => (
               <div key={item} className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span className="h-2 w-2 rounded-full bg-att-400" />
                 <span>{item}</span>
               </div>
             ))}
@@ -146,7 +146,7 @@ function MobileNav({ active, onNavigate }: { active: Surface; onNavigate: (s: Su
             type="button"
             onClick={() => onNavigate(item.id)}
             className={`h-9 flex-shrink-0 rounded-md px-3 text-[12px] font-black ${
-              active === item.id ? "bg-orange-500 text-white" : "border border-slate-200 bg-white text-ink-soft"
+              active === item.id ? "bg-att-500 text-white" : "border border-slate-200 bg-white text-ink-soft"
             }`}
           >
             {item.label}
@@ -171,7 +171,7 @@ function SurfaceHeader({ eyebrow, title, body }: { eyebrow: string; title: strin
   return (
     <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0">
-        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-blue-700">{eyebrow}</p>
+        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-att-700">{eyebrow}</p>
         <h1 className="mt-1 break-words text-[25px] font-black leading-tight text-ink">{title}</h1>
         <p className="mt-2 max-w-[760px] text-[14px] leading-6 text-ink-soft">{body}</p>
       </div>
@@ -211,16 +211,16 @@ function RunList({
             </div>
             <p className="text-[13px] font-bold text-ink-soft">{METHOD_SHORT[run.method]}</p>
             <span className={`w-fit rounded-md px-2 py-1 text-[11px] font-black ${
-              run.error ? "bg-red-50 text-red-700" : run.report ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"
+              run.error ? "bg-red-50 text-red-700" : run.report ? "bg-att-50 text-att-700" : "bg-att-50 text-att-700"
             }`}>
               {run.error ? "Failed" : run.report ? "Ready" : "Running"}
             </span>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => onOpenRun(key)} className="h-9 rounded-md border border-slate-300 px-3 text-[12px] font-bold text-ink-soft hover:border-orange-200 hover:text-orange-700">
+              <button type="button" onClick={() => onOpenRun(key)} className="h-9 rounded-md border border-slate-300 px-3 text-[12px] font-bold text-ink-soft hover:border-att-200 hover:text-att-700">
                 Live Run
               </button>
               {run.report && (
-                <button type="button" onClick={() => onOpenReport(key)} className="h-9 rounded-md bg-orange-500 px-3 text-[12px] font-black text-white hover:bg-orange-600">
+                <button type="button" onClick={() => onOpenReport(key)} className="h-9 rounded-md bg-att-500 px-3 text-[12px] font-black text-white hover:bg-att-600">
                   Report
                 </button>
               )}
@@ -251,11 +251,11 @@ function ReportsIndex({
           key={runKey(run)}
           type="button"
           onClick={() => onOpenReport(runKey(run))}
-          className="rounded-lg border border-slate-200 bg-white p-4 text-left shadow-card transition hover:border-orange-200 hover:bg-orange-50"
+          className="rounded-lg border border-slate-200 bg-white p-4 text-left shadow-card transition hover:border-att-200 hover:bg-att-50"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="rounded-md bg-blue-50 px-2 py-1 text-[11px] font-black text-blue-700">{METHOD_SHORT[run.method]}</span>
-            <span className="rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-black capitalize text-emerald-700">{run.report?.confidence}</span>
+            <span className="rounded-md bg-att-50 px-2 py-1 text-[11px] font-black text-att-700">{METHOD_SHORT[run.method]}</span>
+            <span className="rounded-md bg-att-50 px-2 py-1 text-[11px] font-black capitalize text-att-800">{run.report?.confidence}</span>
           </div>
           <p className="mt-3 break-words text-[15px] font-black leading-5 text-ink">{run.report?.problem}</p>
           <p className="mt-2 line-clamp-2 break-words text-[13px] leading-5 text-ink-muted">{run.report?.root_cause}</p>
@@ -272,7 +272,7 @@ function ExportButton({ href, label, detail, download }: { href?: string; label:
       target={download ? undefined : "_blank"}
       rel={download ? undefined : "noreferrer"}
       download={download}
-      className="rounded-lg border border-slate-200 bg-white p-4 shadow-card transition hover:border-blue-200 hover:bg-blue-50"
+      className="rounded-lg border border-slate-200 bg-white p-4 shadow-card transition hover:border-att-200 hover:bg-att-50"
     >
       <p className="text-[14px] font-black text-ink">{label}</p>
       <p className="mt-1 text-[12.5px] leading-5 text-ink-muted">{detail}</p>
@@ -366,7 +366,7 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
         <h2 className="text-[15px] font-black text-ink">Features</h2>
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           {safe.map((item) => (
-            <div key={item} className="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-800">{item}</div>
+            <div key={item} className="rounded-md border border-att-100 bg-att-50 px-3 py-2 text-[12px] font-bold text-att-800">{item}</div>
           ))}
         </div>
       </section>
@@ -385,7 +385,7 @@ function confidenceRank(report: RCAReport) {
 function itemBadge(item: string, shared: Set<string>) {
   const same = shared.has(normalize(item));
   return (
-    <span className={`ml-2 rounded-md px-2 py-0.5 text-[10.5px] font-black ${same ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700"}`}>
+    <span className={`ml-2 rounded-md px-2 py-0.5 text-[10.5px] font-black ${same ? "bg-att-50 text-att-700" : "bg-amber-50 text-amber-700"}`}>
       {same ? "Shared" : "Differs"}
     </span>
   );
@@ -398,7 +398,7 @@ function MethodCompareCard({ run, shared }: { run: RunState; shared: Set<string>
   return (
     <section className="rounded-lg border border-slate-200 bg-white shadow-card">
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-        <h2 className="text-[17px] font-black text-blue-700">{METHOD_SHORT[run.method]}</h2>
+        <h2 className="text-[17px] font-black text-att-700">{METHOD_SHORT[run.method]}</h2>
         <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-black capitalize text-ink-muted">{report.confidence}</span>
       </div>
       <div className="space-y-4 p-4">
@@ -411,7 +411,7 @@ function MethodCompareCard({ run, shared }: { run: RunState; shared: Set<string>
           <ul className="mt-2 space-y-2">
             {factors.map((item) => (
               <li key={item} className="text-[13px] leading-5 text-ink-soft">
-                <span className="mr-2 text-blue-700">-</span>{item}{itemBadge(item, shared)}
+                <span className="mr-2 text-att-700">-</span>{item}{itemBadge(item, shared)}
               </li>
             ))}
           </ul>
@@ -421,7 +421,7 @@ function MethodCompareCard({ run, shared }: { run: RunState; shared: Set<string>
           <ul className="mt-2 space-y-2">
             {recs.map((item) => (
               <li key={item} className="text-[13px] leading-5 text-ink-soft">
-                <span className="mr-2 inline-flex align-middle text-emerald-700"><CheckIcon className="h-3.5 w-3.5" /></span>{item}{itemBadge(item, shared)}
+                <span className="mr-2 inline-flex align-middle text-att-700"><CheckIcon className="h-3.5 w-3.5" /></span>{item}{itemBadge(item, shared)}
               </li>
             ))}
           </ul>
@@ -448,7 +448,7 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
     <div className="space-y-5">
       <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-card md:grid-cols-3">
         <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-emerald-50 text-[13px] font-black text-emerald-700">{shared.size}</span>
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-att-50 text-[13px] font-black text-att-700">{shared.size}</span>
           <div>
             <p className="text-[13px] font-black text-ink">Shared findings</p>
             <p className="text-[12px] text-ink-muted">Exact matches across factors and fixes</p>
@@ -462,7 +462,7 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-blue-50 text-[13px] font-black text-blue-700">D</span>
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-att-50 text-[13px] font-black text-att-700">D</span>
           <div>
             <p className="text-[13px] font-black text-ink">Deterministic synthesis</p>
             <p className="text-[12px] text-ink-muted">No separate model call used here</p>
@@ -475,23 +475,23 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
         <MethodCompareCard run={b} shared={shared} />
       </div>
 
-      <section className="rounded-lg border border-blue-200 bg-blue-50 p-5">
-        <h2 className="text-[16px] font-black text-blue-900">Recommended Final Interpretation</h2>
+      <section className="rounded-lg border border-att-200 bg-att-50 p-5">
+        <h2 className="text-[16px] font-black text-att-900">Recommended Final Interpretation</h2>
         <div className="mt-4 grid gap-4 lg:grid-cols-3">
-          <div className="rounded-lg border border-blue-100 bg-white p-4">
-            <p className="text-[12px] font-black uppercase tracking-[0.12em] text-blue-700">Shared findings</p>
+          <div className="rounded-lg border border-att-100 bg-white p-4">
+            <p className="text-[12px] font-black uppercase tracking-[0.12em] text-att-700">Shared findings</p>
             <p className="mt-2 text-[13px] leading-5 text-ink-soft">
               {shared.size > 0 ? `${shared.size} exact shared factor or recommendation label found.` : "No exact shared factor or recommendation labels were found."}
             </p>
           </div>
-          <div className="rounded-lg border border-blue-100 bg-white p-4">
-            <p className="text-[12px] font-black uppercase tracking-[0.12em] text-blue-700">Differences</p>
+          <div className="rounded-lg border border-att-100 bg-white p-4">
+            <p className="text-[12px] font-black uppercase tracking-[0.12em] text-att-700">Differences</p>
             <p className="mt-2 text-[13px] leading-5 text-ink-soft">
               {rootSame ? "Both methods returned the same root-cause text." : "The methods returned different root-cause wording and should be reconciled against evidence."}
             </p>
           </div>
-          <div className="rounded-lg border border-blue-100 bg-white p-4">
-            <p className="text-[12px] font-black uppercase tracking-[0.12em] text-blue-700">Interpretation</p>
+          <div className="rounded-lg border border-att-100 bg-white p-4">
+            <p className="text-[12px] font-black uppercase tracking-[0.12em] text-att-700">Interpretation</p>
             <p className="mt-2 text-[13px] leading-5 text-ink-soft">
               Use {METHOD_SHORT[best.method]} as the primary draft because it has {best.report?.confidence} confidence, and review {METHOD_SHORT[other.method]} differences as evidence prompts.
             </p>
@@ -727,7 +727,7 @@ export default function App() {
           <EmptyState
             title="No live run"
             body="Start a new analysis to see the live stage activity."
-            action={<button type="button" onClick={() => setActiveSurface("new")} className="h-10 rounded-md bg-blue-700 px-4 text-[13px] font-black text-white">New Analysis</button>}
+            action={<button type="button" onClick={() => setActiveSurface("new")} className="h-10 rounded-md bg-att-600 px-4 text-[13px] font-black text-white">New Analysis</button>}
           />
         );
       }
@@ -754,7 +754,7 @@ export default function App() {
           <EmptyState
             title="No report ready"
             body="A completed RCA report will appear here after generation and artifact rendering."
-            action={<button type="button" onClick={() => setActiveSurface(runs?.length ? "run" : "new")} className="h-10 rounded-md bg-blue-700 px-4 text-[13px] font-black text-white">{runs?.length ? "View Live Run" : "New Analysis"}</button>}
+            action={<button type="button" onClick={() => setActiveSurface(runs?.length ? "run" : "new")} className="h-10 rounded-md bg-att-600 px-4 text-[13px] font-black text-white">{runs?.length ? "View Live Run" : "New Analysis"}</button>}
           />
         );
       }
@@ -790,7 +790,7 @@ export default function App() {
   }[activeSurface];
 
   return (
-    <div className="min-h-full bg-[linear-gradient(135deg,#fff7ed_0%,#ecfdf5_42%,#eef2ff_100%)]">
+    <div className="min-h-full bg-[linear-gradient(135deg,#ffffff_0%,#eaf8fe_48%,#f5fbfe_100%)]">
       <Sidebar
         active={activeSurface}
         onNavigate={setActiveSurface}
@@ -805,7 +805,7 @@ export default function App() {
           {activeSurface !== "new" && <SurfaceHeader eyebrow={header[0]} title={header[1]} body={header[2]} />}
           {surfaceContent}
         </main>
-        <footer className="border-t border-slate-200 bg-white px-4 py-4 text-center text-[11.5px] font-semibold text-ink-muted sm:px-6">
+        <footer className="border-t border-att-100 bg-white px-4 py-4 text-center text-[11.5px] font-semibold text-ink-muted sm:px-6">
           AI-generated RCA drafts require validation against logs, metrics, and deployment timelines before action.
         </footer>
       </div>

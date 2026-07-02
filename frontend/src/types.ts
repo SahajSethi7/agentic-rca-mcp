@@ -80,6 +80,7 @@ export interface AnalyzeResponse { job_id: string; runs: { index: number; method
 
 export interface MemoryMeta {
   enabled: boolean;
+  writeback_enabled?: boolean;
   path?: string;
   record_count: number | null;
   warning?: string | null;

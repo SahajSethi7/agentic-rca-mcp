@@ -1,11 +1,10 @@
-"""HTML report generator - modern "incident console" theme.
+"""HTML report generator - AT&T-styled incident report theme.
 
 Renders a validated :class:`RCAReport` into a single, self-contained, styled
 HTML document that mirrors the PDF section order and every Phase 4 quality
-field. The visual language (a light canvas, soft elevated cards, one indigo
-accent, generous whitespace) is shared with the Phase 6 web UI so the inline
-view, the saved ``Agentic_RCA.html`` and a printed page all feel like one
-product.
+field. The visual language uses the same AT&T blue, navy, black, and light
+cyan palette as the React UI so the inline view, the saved ``Agentic_RCA.html``
+and a printed page all feel like one product.
 
 Public API
 ----------
@@ -31,12 +30,12 @@ from typing import Any
 
 from schemas import RCAReport
 
-ACCENT = "#ea580c"
+ACCENT = "#009fdb"
 
 CONFIDENCE_COLORS = {
-    "high": "#16a34a",
-    "medium": "#d97706",
-    "low": "#dc2626",
+    "high": "#0073a8",
+    "medium": "#005a8f",
+    "low": "#061a2f",
 }
 
 METHOD_LABELS = {
@@ -55,13 +54,15 @@ DISCLAIMER = (
 # file, the web UI and the print layout all draw from a single source of truth.
 REPORT_CSS = """
 :root{
-  --accent:#ea580c; --accent-2:#0f766e; --accent-3:#4f46e5; --accent-soft:#fff7ed; --accent-ring:#fed7aa;
-  --bg:#fff7ed; --surface:#ffffff; --ink:#1e2330; --ink-soft:#475067;
-  --muted:#6b7280; --line:#e7e9f2; --line-strong:#d7dbea;
-  --high:#16a34a; --medium:#d97706; --low:#dc2626;
-  --radius:16px; --radius-sm:10px;
-  --shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 28px -12px rgba(31,38,95,.22);
-  --shadow-soft:0 1px 2px rgba(16,24,40,.05);
+  --att-black:#000000; --att-navy:#061a2f; --att-dark:#003b5c;
+  --accent:#009fdb; --accent-2:#0073a8; --accent-3:#005a8f;
+  --accent-soft:#eaf8fe; --accent-ring:#9fe2f6;
+  --bg:#f5fbfe; --surface:#ffffff; --ink:#0b1720; --ink-soft:#3d5265;
+  --muted:#687789; --line:#d6dee6; --line-strong:#b8c7d3;
+  --high:#0073a8; --medium:#005a8f; --low:#061a2f;
+  --radius:8px; --radius-sm:6px;
+  --shadow:0 1px 2px rgba(6,26,47,.06), 0 16px 40px -28px rgba(0,90,143,.38);
+  --shadow-soft:0 1px 2px rgba(6,26,47,.06), 0 10px 26px -22px rgba(0,90,143,.32);
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --sans:"Inter",system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
 }
@@ -72,10 +73,10 @@ REPORT_CSS = """
 
 /* Header band */
 .rca-hero{position:relative;overflow:hidden;border-radius:var(--radius);
-  background:linear-gradient(135deg,#ea580c 0%,#0f766e 52%,#4f46e5 100%);
+  background:linear-gradient(135deg,#000000 0%,#061a2f 55%,#009fdb 100%);
   color:#fff;padding:30px 32px 28px;box-shadow:var(--shadow)}
 .rca-hero::after{content:"";position:absolute;inset:0;
-  background:linear-gradient(90deg,rgba(255,255,255,.18),rgba(255,255,255,0));
+  background:linear-gradient(90deg,rgba(159,226,246,.22),rgba(255,255,255,0));
   pointer-events:none}
 .rca-eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;
   font-weight:700;opacity:.85;margin:0 0 6px}
@@ -83,7 +84,7 @@ REPORT_CSS = """
 .rca-hero-problem{margin:12px 0 0;max-width:62ch;font-size:14.5px;opacity:.95}
 .rca-meta{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
 .rca-tag{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.16);
-  border:1px solid rgba(255,255,255,.22);backdrop-filter:blur(2px);
+  border:1px solid rgba(159,226,246,.34);backdrop-filter:blur(2px);
   padding:4px 11px;border-radius:999px;font-size:12px;font-weight:600}
 .rca-tag b{font-weight:700}
 .rca-tag .mono{font-family:var(--mono);font-size:11.5px;font-weight:600}
@@ -115,10 +116,10 @@ REPORT_CSS = """
 .why-node{position:absolute;left:0;top:0;width:36px;height:36px;border-radius:50%;
   display:grid;place-items:center;font-weight:800;font-size:14px;color:#fff;
   background:linear-gradient(135deg,var(--accent),var(--accent-2));
-  box-shadow:0 4px 12px -3px rgba(79,70,229,.55);border:3px solid #fff}
+  box-shadow:0 4px 12px -3px rgba(0,159,219,.55);border:3px solid #fff}
 .why-q{font-weight:700;font-size:14.5px;color:var(--ink);margin:5px 0 4px}
 .why-a{font-size:14px;color:var(--ink-soft);margin:0}
-.why-step.is-root .why-node{background:linear-gradient(135deg,#0f172a,#334155)}
+.why-step.is-root .why-node{background:linear-gradient(135deg,var(--att-black),var(--att-navy))}
 
 /* Root-cause callout */
 .rca-root-cause{border:1px solid var(--accent-ring);background:
@@ -133,7 +134,7 @@ REPORT_CSS = """
 .rca-list li{position:relative;padding:11px 14px 11px 40px;background:#fbfbfe;
   border:1px solid var(--line);border-radius:var(--radius-sm);font-size:14px;color:var(--ink-soft)}
 .rca-list.check li::before{content:"\\2713";position:absolute;left:13px;top:11px;
-  color:var(--high);font-weight:800}
+  color:var(--accent-2);font-weight:800}
 .rca-list.dot li::before{content:"";position:absolute;left:15px;top:18px;width:7px;height:7px;
   border-radius:50%;background:var(--accent)}
 .rca-list.num{counter-reset:rec}
@@ -173,7 +174,7 @@ REPORT_CSS = """
 /* Fishbone */
 .fish{display:grid;gap:10px}
 .fish-cat{border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden}
-.fish-cat .hd{display:flex;align-items:center;gap:9px;padding:9px 13px;background:#f7f8fd;
+.fish-cat .hd{display:flex;align-items:center;gap:9px;padding:9px 13px;background:var(--accent-soft);
   font-weight:700;font-size:13px;color:var(--ink)}
 .fish-cat .hd .badge{margin-left:auto;font-size:10.5px;font-weight:800;letter-spacing:.05em;
   text-transform:uppercase;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:999px}
@@ -187,14 +188,14 @@ REPORT_CSS = """
 /* Fault tree */
 .ftree{margin:0;font-family:var(--sans)}
 .ftree .top{font-weight:700;font-size:14.5px;color:var(--ink);margin:0 0 10px;
-  padding:10px 13px;background:#f7f8fd;border:1px solid var(--line);border-radius:var(--radius-sm)}
+  padding:10px 13px;background:var(--accent-soft);border:1px solid var(--line);border-radius:var(--radius-sm)}
 .ftree ul{list-style:none;margin:0 0 0 8px;padding:0 0 0 16px;border-left:2px dashed var(--line-strong)}
 .ftree>ul{border-left:none;padding-left:0;margin-left:0}
 .ftree li{margin:8px 0}
 .gate{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:13.5px;color:var(--ink)}
 .gate .g{font-family:var(--mono);font-size:11px;font-weight:800;color:#fff;
   background:var(--accent);border-radius:6px;padding:2px 7px;letter-spacing:.03em}
-.gate .g.and{background:#0f172a}
+.gate .g.and{background:var(--att-navy)}
 .ftree .leaf{font-size:13.5px;color:var(--ink-soft)}
 .ftree .basics{margin-top:12px}
 .ftree .basics .lbl{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
@@ -203,12 +204,12 @@ REPORT_CSS = """
 /* Mermaid tree */
 .tree-card .hint{font-size:12.5px;color:var(--muted);margin:-6px 0 12px}
 .mermaid-wrap{border:1px solid var(--line);border-radius:var(--radius-sm);background:
-  repeating-linear-gradient(0deg,#fcfcff,#fcfcff 23px,#f4f5fb 24px);
+  repeating-linear-gradient(0deg,#ffffff,#ffffff 23px,#eaf8fe 24px);
   padding:18px;overflow:auto;text-align:center;min-height:80px}
 .mermaid{font-family:var(--sans)!important}
 .mermaid svg .node:not(.root) .nodeLabel,.mermaid svg .node:not(.root) .label,
 .mermaid svg .node:not(.root) foreignObject,.mermaid svg .node:not(.root) foreignObject *,
-.mermaid svg .edgeLabel,.mermaid svg .edgeLabel *{color:#111827!important;fill:#111827!important}
+.mermaid svg .edgeLabel,.mermaid svg .edgeLabel *{color:#0b1720!important;fill:#0b1720!important}
 .mermaid svg .node.root .nodeLabel,.mermaid svg .node.root .label,
 .mermaid svg .node.root foreignObject,.mermaid svg .node.root foreignObject *{color:#ffffff!important;fill:#ffffff!important}
 .mermaid svg .edgeLabel rect,.mermaid svg .labelBkg{background:#ffffff!important;fill:#ffffff!important;fill-opacity:.96!important}
@@ -218,7 +219,7 @@ REPORT_CSS = """
 
 /* Disclaimer */
 .rca-disclaimer{display:flex;gap:11px;align-items:flex-start;font-size:12.5px;color:var(--muted);
-  background:#fbfbfe;border:1px dashed var(--line-strong);border-radius:var(--radius-sm);padding:13px 15px}
+  background:#ffffff;border:1px dashed var(--line-strong);border-radius:var(--radius-sm);padding:13px 15px}
 .rca-disclaimer .i{flex:0 0 auto;width:18px;height:18px;border-radius:50%;background:var(--accent-soft);
   color:var(--accent);font-weight:800;font-size:12px;display:grid;place-items:center;margin-top:1px}
 .rca-empty{color:var(--muted);font-size:14px;font-style:italic}
@@ -459,9 +460,9 @@ def _mermaid_tree(report: RCAReport) -> str:
         prev = node
     rc = _mermaid_label(report.root_cause, 80)
     lines.append(f'  {prev} --> RC["Root cause<br/>{rc}"]:::root')
-    lines.append("  classDef problem fill:#fff7ed,stroke:#ea580c,stroke-width:1.5px,color:#111827;")
-    lines.append("  classDef default fill:#ffffff,stroke:#0f766e,stroke-width:1.5px,color:#111827;")
-    lines.append("  classDef root fill:#0f172a,stroke:#0f172a,color:#ffffff;")
+    lines.append("  classDef problem fill:#eaf8fe,stroke:#009fdb,stroke-width:1.5px,color:#0b1720;")
+    lines.append("  classDef default fill:#ffffff,stroke:#0073a8,stroke-width:1.5px,color:#0b1720;")
+    lines.append("  classDef root fill:#061a2f,stroke:#061a2f,color:#ffffff;")
     graph = "\n".join(lines)
     return (
         "<section class='rca-card tree-card'><h2 class='rca-h2'>5-Why Tree</h2>"
@@ -530,15 +531,15 @@ def build_html(report: RCAReport, *, include_tree: bool = True) -> str:
             "document.querySelectorAll('.mermaid svg .node:not(.root) foreignObject *,"
             ".mermaid svg .node:not(.root) .nodeLabel,.mermaid svg .node:not(.root) .label,"
             ".mermaid svg .edgeLabel,.mermaid svg .edgeLabel *').forEach(function(el){"
-            "el.style.color='#111827';el.style.fill='#111827';});"
+            "el.style.color='#0b1720';el.style.fill='#0b1720';});"
             "document.querySelectorAll('.mermaid svg .node.root foreignObject *,"
             ".mermaid svg .node.root .nodeLabel,.mermaid svg .node.root .label').forEach(function(el){"
             "el.style.color='#ffffff';el.style.fill='#ffffff';});}"
             "try{if(window.mermaid){mermaid.initialize({startOnLoad:false,"
-            "theme:'base',themeVariables:{primaryColor:'#ffffff',primaryBorderColor:'#0f766e',"
-            "primaryTextColor:'#111827',secondaryColor:'#fff7ed',tertiaryColor:'#ecfdf5',"
-            "nodeTextColor:'#111827',edgeLabelBackground:'#ffffff',lineColor:'#64748b',"
-            "textColor:'#111827',titleColor:'#111827',fontFamily:'Inter,system-ui,sans-serif'}});"
+            "theme:'base',themeVariables:{primaryColor:'#ffffff',primaryBorderColor:'#0073a8',"
+            "primaryTextColor:'#0b1720',secondaryColor:'#eaf8fe',tertiaryColor:'#d3f0fc',"
+            "nodeTextColor:'#0b1720',edgeLabelBackground:'#ffffff',lineColor:'#005a8f',"
+            "textColor:'#0b1720',titleColor:'#0b1720',fontFamily:'Inter,system-ui,sans-serif'}});"
             "mermaid.run().then(fixContrast).catch(fail);}else{fail();}}catch(e){fail();}"
             "setTimeout(function(){if(!document.querySelector('.mermaid svg, .mermaid[data-processed]'))fail();},2500);"
             "})();"

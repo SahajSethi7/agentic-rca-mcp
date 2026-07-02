@@ -9,6 +9,9 @@ venv
 .env
 outputs
 scratch
+frontend/node_modules
+frontend/dist
+frontend/*.log
 docs
 eval/results.json
 eval/results.md

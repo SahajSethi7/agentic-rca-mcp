@@ -42,9 +42,9 @@ export function stageOrdinal(stage: Stage) {
 
 function StageIcon({ done, current, index }: { done: boolean; current: boolean; index: number }) {
   const cls = done
-    ? "border-emerald-500 bg-emerald-500 text-white"
+    ? "border-att-500 bg-att-500 text-white"
     : current
-      ? "border-orange-500 bg-white text-orange-700 pulse-ring"
+      ? "border-att-500 bg-white text-att-700 pulse-ring"
       : "border-slate-300 bg-white text-slate-400";
   return (
     <span className={`grid h-9 w-9 place-items-center rounded-full border-2 text-[12px] font-black ${cls}`}>
@@ -68,8 +68,8 @@ export function ActivityTrace({ activity = [], compact = false }: { activity?: A
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
         <div className="flex items-center gap-2">
           <p className="text-[13px] font-black text-ink">Live Activity Feed</p>
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-att-50 px-2 py-1 text-[11px] font-bold text-att-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-att-500" />
             Streaming
           </span>
         </div>
@@ -83,7 +83,7 @@ export function ActivityTrace({ activity = [], compact = false }: { activity?: A
               <div className="min-w-0">
                 <div className="flex items-start gap-2">
                   <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${
-                    item.stage === "error" ? "bg-red-500" : item.stage === "done" ? "bg-emerald-500" : "bg-blue-600"
+                    item.stage === "error" ? "bg-red-500" : item.stage === "done" ? "bg-att-500" : "bg-att-600"
                   }`} />
                   <div className="min-w-0 flex-1">
                     <p className="break-words text-[13px] font-black text-ink">{item.title}</p>
@@ -101,7 +101,7 @@ export function ActivityTrace({ activity = [], compact = false }: { activity?: A
                     {item.files && item.files.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {item.files.map((file) => (
-                          <span key={file} className="rounded-md bg-blue-50 px-2 py-1 font-mono text-[11px] font-bold text-blue-700 ring-1 ring-blue-100">
+                          <span key={file} className="rounded-md bg-att-50 px-2 py-1 font-mono text-[11px] font-bold text-att-700 ring-1 ring-att-100">
                             {file}
                           </span>
                         ))}
@@ -138,11 +138,11 @@ export default function Stepper({ stage, round }: { stage: Stage; round?: number
             return (
               <Fragment key={s}>
                 {i > 0 && (
-                  <span className={`mx-2 mt-[18px] h-0.5 flex-1 rounded ${done || i <= idx ? "bg-orange-400" : "bg-slate-200"}`} />
+                  <span className={`mx-2 mt-[18px] h-0.5 flex-1 rounded ${done || i <= idx ? "bg-att-400" : "bg-slate-200"}`} />
                 )}
                 <div className="flex w-[88px] flex-shrink-0 flex-col items-center gap-2 text-center">
                   <StageIcon done={done} current={current} index={i} />
-                  <span className={`text-[12px] font-black ${current ? "text-orange-700" : done ? "text-emerald-700" : "text-ink-muted"}`}>
+                  <span className={`text-[12px] font-black ${current ? "text-att-700" : done ? "text-att-700" : "text-ink-muted"}`}>
                     {LABEL[s]}
                   </span>
                 </div>
@@ -157,10 +157,10 @@ export default function Stepper({ stage, round }: { stage: Stage; round?: number
           <span className="mx-2 text-slate-300">|</span>
           {note}
         </p>
-        <p className="text-[12.5px] font-black text-orange-700">{progress}%</p>
+        <p className="text-[12.5px] font-black text-att-700">{progress}%</p>
       </div>
       <div className="mt-2 h-2 rounded-full bg-slate-100">
-        <div className="h-2 rounded-full bg-gradient-to-r from-orange-500 via-teal-500 to-indigo-500 transition-all" style={{ width: `${progress}%` }} />
+        <div className="h-2 rounded-full bg-gradient-to-r from-att-500 via-att-400 to-att-700 transition-all" style={{ width: `${progress}%` }} />
       </div>
     </div>
   );
