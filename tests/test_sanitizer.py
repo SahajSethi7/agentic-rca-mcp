@@ -194,7 +194,7 @@ def test_injection_through_fastapi_endpoint_is_sanitized(
     from agent.orchestrator import RCAAgent
 
     provider = CapturingStubProvider()
-    settings = Settings(output_dir=tmp_path, validation_enabled=False)
+    settings = Settings(output_dir=tmp_path, validation_enabled=False, memory_writeback_enabled=False)
 
     monkeypatch.setattr(api, "get_settings", lambda: settings)
     monkeypatch.setattr(
