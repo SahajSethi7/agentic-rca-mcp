@@ -126,4 +126,5 @@ def guarded_settings(tmp_path) -> Settings:
         validation_enabled=False,
         agent_timeout_seconds=30,
         max_revise_rounds=2,
+        memory_writeback_enabled=False,
     )

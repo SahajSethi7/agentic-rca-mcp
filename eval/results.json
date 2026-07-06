@@ -7,10 +7,10 @@
     "deepening_score": 2.0,
     "root_cause_score": 2.0,
     "recommendation_score": 1.0,
-    "latency_score": 0.5,
-    "latency_seconds": 49.569,
-    "total": 9.5,
-    "root_cause": "Missing validation and weak release process.",
+    "latency_score": 0.0,
+    "latency_seconds": 107.354,
+    "total": 9.0,
+    "root_cause": "Inadequate CI/CD pipeline configuration that failed to ensure comprehensive testing before deployment.",
     "error": ""
   },
   {
@@ -21,10 +21,10 @@
     "deepening_score": 2.0,
     "root_cause_score": 2.0,
     "recommendation_score": 1.0,
-    "latency_score": 0.5,
-    "latency_seconds": 57.121,
-    "total": 9.5,
-    "root_cause": "Unclear ownership of the database migration process.",
+    "latency_score": 0.0,
+    "latency_seconds": 109.585,
+    "total": 9.0,
+    "root_cause": "Lack of robust validation and testing processes for database migrations.",
     "error": ""
   },
   {
@@ -35,10 +35,10 @@
     "deepening_score": 2.0,
     "root_cause_score": 2.0,
     "recommendation_score": 1.0,
-    "latency_score": 0.5,
-    "latency_seconds": 50.858,
-    "total": 9.5,
-    "root_cause": "Insufficient monitoring and weak release processes that did not include adequate validation checks.",
+    "latency_score": 0.0,
+    "latency_seconds": 100.394,
+    "total": 9.0,
+    "root_cause": "Insufficient validation and testing processes in place for new scheduler configurations.",
     "error": ""
   },
   {
@@ -50,9 +50,9 @@
     "root_cause_score": 2.0,
     "recommendation_score": 1.0,
     "latency_score": 0.5,
-    "latency_seconds": 50.277,
+    "latency_seconds": 86.699,
     "total": 9.5,
-    "root_cause": "Missing validation and weak release process for the monitoring system.",
+    "root_cause": "Validation metrics were not designed to detect performance issues, leading to insufficient test coverage.",
     "error": ""
   },
   {
@@ -63,10 +63,10 @@
     "deepening_score": 2.0,
     "root_cause_score": 2.0,
     "recommendation_score": 1.0,
-    "latency_score": 1.0,
-    "latency_seconds": 37.953,
-    "total": 10.0,
-    "root_cause": "Missing validation of API dependencies during deployment",
+    "latency_score": 0.5,
+    "latency_seconds": 71.11,
+    "total": 9.5,
+    "root_cause": "The root cause of this incident is that the database credentials were not properly validated during the deployment process.",
     "error": ""
   },
   {
@@ -77,10 +77,10 @@
     "deepening_score": 2.0,
     "root_cause_score": 2.0,
     "recommendation_score": 1.0,
-    "latency_score": 0.0,
-    "latency_seconds": 144.133,
-    "total": 9.0,
-    "root_cause": "Weak release process due to inadequate testing and validation of dependencies.",
+    "latency_score": 0.5,
+    "latency_seconds": 47.861,
+    "total": 9.5,
+    "root_cause": "The migration script did not include a step to validate and test the replication settings before applying them to the production environment.",
     "error": ""
   },
   {
@@ -91,10 +91,10 @@
     "deepening_score": 2.0,
     "root_cause_score": 2.0,
     "recommendation_score": 1.0,
-    "latency_score": 1.0,
-    "latency_seconds": 17.383,
-    "total": 10.0,
-    "root_cause": "Weak release process leading to untested and unvalidated changes",
+    "latency_score": 0.5,
+    "latency_seconds": 50.2,
+    "total": 9.5,
+    "root_cause": "Inadequate testing and validation of the new scheduling algorithm.",
     "error": ""
   },
   {
@@ -105,10 +105,10 @@
     "deepening_score": 2.0,
     "root_cause_score": 2.0,
     "recommendation_score": 1.0,
-    "latency_score": 0.5,
-    "latency_seconds": 77.183,
-    "total": 9.5,
-    "root_cause": "Insufficient resource allocation during system configuration",
+    "latency_score": 0.0,
+    "latency_seconds": 115.767,
+    "total": 9.0,
+    "root_cause": "Design flaw in the system's monitoring and alerting architecture.",
     "error": ""
   }
 ]

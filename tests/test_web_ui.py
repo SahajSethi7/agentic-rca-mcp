@@ -118,13 +118,20 @@ def test_analyze_streams_stages_and_renders_report(client):
     assert report["root_cause"]
     assert len(report["why_chain"]) >= 3
     assert "html" not in results[0]
+    assert "json_url" not in results[0]
     assert results[0]["memory_xlsx_url"].endswith("/matching-past-rcas.xlsx")
+    saved_job = jobs.manager.get(job_id)
+    assert saved_job is not None
+    assert saved_job.runs[0].json_path is not None
+    assert saved_job.runs[0].json_path.exists()
     # PDF download serves a real file as an attachment.
     pdf = client.get(results[0]["pdf_url"])
     assert pdf.status_code == 200
     assert pdf.headers["content-type"] == "application/pdf"
     assert "attachment" in pdf.headers.get("content-disposition", "")
     assert len(pdf.content) > 800
+    json_artifact = client.get(f"/ui/jobs/{job_id}/runs/0/report.json")
+    assert json_artifact.status_code == 404
     xlsx = client.get(results[0]["memory_xlsx_url"])
     assert xlsx.status_code == 200
     assert "spreadsheetml.sheet" in xlsx.headers["content-type"]

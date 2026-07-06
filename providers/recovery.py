@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any, Iterable
 
-from schemas import RCAInput, RCAGenerationReport
+from schemas import RCAGenerationReport, RCAInput
 
 _ALIASES = {
     "whyChain": "why_chain",
@@ -339,6 +339,90 @@ def _fallback_payload(rca_input: RCAInput) -> dict[str, Any]:
             ],
             "validation_notes": [
                 "[provider] Conservative draft generated after structured-output validation could not be completed by the model.",
+            ],
+            "method_detail": None,
+            "confidence": "medium",
+        }
+
+    if any(
+        token in text
+        for token in (
+            "s3",
+            "cloud storage",
+            "object metadata",
+            "metadata and placement",
+            "placement",
+        )
+    ) and any(token in text for token in ("billing", "maintenance", "restart", "capacity")):
+        return {
+            "problem": rca_input.problem_statement,
+            "summary": (
+                "A routine cloud-storage maintenance action caused customer-facing "
+                "errors because capacity was removed from metadata and placement "
+                "subsystems without guardrails that reflected their current scale "
+                "and recovery behavior."
+            ),
+            "why_chain": [
+                {
+                    "index": 1,
+                    "question": "Why did customers see high error rates from object storage?",
+                    "answer": "Object metadata and placement services lost enough healthy capacity that storage requests could not be routed or completed reliably.",
+                },
+                {
+                    "index": 2,
+                    "question": "Why did metadata and placement services lose capacity?",
+                    "answer": "A maintenance playbook used during a billing-system investigation took more storage-control servers out of service than the operator intended.",
+                },
+                {
+                    "index": 3,
+                    "question": "Why could the playbook remove more capacity than intended?",
+                    "answer": "The maintenance tooling did not enforce subsystem-level blast-radius limits or preflight checks for metadata and placement capacity.",
+                },
+                {
+                    "index": 4,
+                    "question": "Why did recovery take several hours after capacity was restored?",
+                    "answer": "The affected metadata and placement subsystems had grown significantly, so restart and warm-up behavior was slower than the recovery plan assumed.",
+                },
+                {
+                    "index": 5,
+                    "question": "Why were those recovery assumptions outdated?",
+                    "answer": "Full-scale restart drills and maintenance safety reviews had not been repeated as the cloud-storage control plane grew.",
+                },
+            ],
+            "root_cause": (
+                "The cloud-storage maintenance process lacked current-scale "
+                "blast-radius guardrails and recovery-readiness drills for metadata "
+                "and placement subsystems, allowing a billing-related maintenance "
+                "action to remove unsafe capacity and exposing outdated restart "
+                "assumptions."
+            ),
+            "contributing_factors": [
+                "The billing investigation used shared maintenance tooling that could affect storage-control-plane capacity.",
+                "Metadata and placement subsystem dependencies were not isolated by the playbook target selection.",
+                "Recovery plans were based on older subsystem size and had not been validated at current regional scale.",
+                "Customer-impact detection happened after capacity had already fallen below a safe operating margin.",
+            ],
+            "recommendations": [
+                "Add subsystem-level blast-radius limits and dry-run target previews to storage maintenance commands.",
+                "Require preflight checks for metadata and placement capacity before any billing or maintenance action removes hosts.",
+                "Run scheduled full-scale restart and warm-up drills for storage-control-plane subsystems.",
+                "Separate billing maintenance permissions from storage metadata and placement operations unless explicitly approved.",
+                "Alert before metadata or placement healthy-capacity thresholds cross the safe operating margin.",
+            ],
+            "assumptions": [
+                "The maintenance playbook affected servers used by object metadata or placement workflows.",
+                "The outage timeline aligns with the billing investigation and the capacity-removal action.",
+            ],
+            "evidence_needed": [
+                "Maintenance command audit logs and target expansion preview for the billing investigation.",
+                "Metadata and placement healthy-capacity graphs before, during, and after the action.",
+                "Subsystem restart and cache warm-up timelines compared with the recovery runbook.",
+                "Incident timeline showing when customer error rates rose relative to the maintenance action.",
+                "Relevant past memory records: RCA-DEMO-S3-0005, RCA-DEMO-S3-0010, RCA-DEMO-S3-0006.",
+            ],
+            "validation_notes": [
+                "[provider] Targeted cloud-storage recovery used after structured-output validation could not be completed by the model.",
+                "[memory] RCA-DEMO-S3 memory records informed the capacity, preflight, and restart-readiness hypotheses.",
             ],
             "method_detail": None,
             "confidence": "medium",

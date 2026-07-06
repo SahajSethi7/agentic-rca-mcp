@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from openpyxl import load_workbook
+
 from agent.orchestrator import RCAAgent
 from config import Settings
 from providers.base import RCAProvider
@@ -114,6 +116,7 @@ def test_agent_revises_method_consistency_findings() -> None:
         validation_enabled=False,
         max_revise_rounds=2,
         agent_timeout_seconds=60,
+        memory_writeback_enabled=False,
     )
     agent = RCAAgent(settings=settings, provider=provider)
 
@@ -125,3 +128,41 @@ def test_agent_revises_method_consistency_findings() -> None:
     assert provider.revise_calls == 1
     assert report.root_cause == report.method_detail["fishbone"]["selected_cause"]
     assert any("method_consistency" in note for note in report.validation_notes)
+
+
+def test_agent_appends_completed_run_to_memory_workbook(tmp_path) -> None:
+    provider = StubProvider()
+    memory_path = tmp_path / "past_rca_memory.xlsx"
+    settings = Settings(
+        validation_enabled=False,
+        max_revise_rounds=2,
+        agent_timeout_seconds=60,
+        memory_enabled=False,
+        memory_writeback_enabled=True,
+        memory_path=memory_path,
+    )
+    agent = RCAAgent(settings=settings, provider=provider)
+
+    report = agent.run(
+        "Checkout requests time out after a database migration.",
+        context="Migration finished ten minutes before checkout alerts fired.",
+        method="fishbone",
+        severity="high",
+        system_area="payments",
+    )
+
+    workbook = load_workbook(memory_path)
+    sheet = workbook["Past RCA Memory"]
+    headers = [cell.value for cell in sheet[1]]
+    values = dict(zip(headers, [cell.value for cell in sheet[2]], strict=False))
+
+    assert sheet.max_row == 2
+    assert str(values["incident_id"]).startswith("AUTO-")
+    assert values["problem_statement"] == "Checkout requests time out after a database migration."
+    assert values["system_area"] == "payments"
+    assert values["root_cause"] == report.root_cause
+    assert values["confidence"] == report.confidence
+    assert values["status"] == "generated"
+    assert "method:fishbone" in values["tags"]
+    assert any("added this RCA to past RCA memory" in note for note in report.validation_notes)
+    assert agent.last_run_stats["memory_writeback"]["row_number"] == 2

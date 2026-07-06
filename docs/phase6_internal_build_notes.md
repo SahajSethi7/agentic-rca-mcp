@@ -70,7 +70,7 @@ library (Days 39-42) are separate.
 - `tests/test_html_generator.py` — full document + sections, Mermaid present for
   5-Why and absent for method views, escaping, body-only render, summary JSON.
 - `tests/test_web_ui.py` — page served, meta, analyze -> streamed stages ->
-  result, PDF/HTML/JSON downloads, two-method comparison, clean structured
+  result, PDF/HTML/Excel downloads, two-method comparison, clean structured
   error on provider failure, SSE smoke, unknown-job 404. Provider is stubbed via
   `JobManager.set_agent_factory`, so the suite needs no network or model.
 - `tests/test_entrypoints.py` extended to assert the HTML artifact is written.

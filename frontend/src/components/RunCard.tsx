@@ -19,6 +19,12 @@ function statusLabel(run: RunState) {
   return "In progress";
 }
 
+function statusClass(run: RunState) {
+  if (run.error) return "bg-danger-50 text-danger-700 ring-1 ring-danger-200";
+  if (run.report) return "bg-att-50 text-att-700 ring-1 ring-att-100";
+  return "bg-att-100 text-att-800 ring-1 ring-att-200 pulse-ring";
+}
+
 function severityLabel(value?: string | null) {
   if (!value) return "Not set";
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -78,9 +84,8 @@ export default function RunCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-[11px] font-black uppercase tracking-[0.14em] text-att-700">Live Run</p>
-              <span className={`rounded-md px-2 py-1 text-[11px] font-black ${
-                run.error ? "bg-red-50 text-red-700" : run.report ? "bg-att-50 text-att-700" : "bg-att-50 text-att-700"
-              }`}>
+              <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-extrabold ${statusClass(run)}`}>
+                {!run.error && !run.report && <span className="h-1.5 w-1.5 rounded-full bg-att-600" />}
                 {statusLabel(run)}
               </span>
             </div>
@@ -109,10 +114,10 @@ export default function RunCard({
           </div>
 
           {run.error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3.5 text-red-800">
+            <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3.5 text-danger-800">
               <p className="text-[13.5px] font-black">{run.error.error_type ? run.error.error_type.replace(/_/g, " ") : "Analysis failed"}</p>
               <p className="mt-1 text-[13px] leading-5">{run.error.message || "The pipeline returned an error."}</p>
-              {run.error.detail && <p className="mt-2 font-mono text-[11.5px] text-red-700">{run.error.detail}</p>}
+              {run.error.detail && <p className="mt-2 font-mono text-[11.5px] text-danger-700">{run.error.detail}</p>}
             </div>
           )}
 

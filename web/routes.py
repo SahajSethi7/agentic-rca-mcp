@@ -8,7 +8,7 @@ MCP and the CLI (sanitization, structured errors, audit logging all live in
 * ``POST /ui/analyze``                        -> start a job (1 or 2 methods)
 * ``GET  /ui/events/{job_id}``                -> SSE stream of stage/result events
 * ``GET  /ui/status/{job_id}?cursor=N``       -> polling fallback for the stream
-* ``GET  /ui/jobs/{job_id}/runs/{i}/report.pdf|html|json|xlsx`` -> artifacts/download
+* ``GET  /ui/jobs/{job_id}/runs/{i}/report.pdf|html|xlsx`` -> artifacts/download
 """
 
 from __future__ import annotations
@@ -54,6 +54,7 @@ def meta() -> dict:
     settings = get_settings()
     memory = {
         "enabled": settings.memory_enabled,
+        "writeback_enabled": settings.memory_writeback_enabled,
         "path": str(settings.memory_path),
         "record_count": None,
         "warning": None,
@@ -147,7 +148,6 @@ def _run_artifact(job_id: str, index: int, kind: str):
     path: Path | None = {
         "pdf": run.pdf_path,
         "html": run.html_path,
-        "json": run.json_path,
         "xlsx": run.memory_matches_path,
     }.get(kind)
     if path is None or not Path(path).exists():

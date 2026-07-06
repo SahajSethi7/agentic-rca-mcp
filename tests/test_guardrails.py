@@ -260,6 +260,7 @@ def test_validation_model_failure_is_fail_soft(monkeypatch, tmp_path) -> None:
         validation_enabled=True,
         validation_model=None,  # forces fallback to the generation provider
         agent_timeout_seconds=30,
+        memory_writeback_enabled=False,
     )
     provider = CapturingStubProvider(
         verdict_error=make_provider_error("connection"),
@@ -323,6 +324,7 @@ def test_dedicated_local_validation_model_uses_llama32(
         hosted_api_key=None,
         agent_timeout_seconds=30,
         max_revise_rounds=0,
+        memory_writeback_enabled=False,
     )
     agent = RCAAgent(settings=settings, provider=stub_provider)
 

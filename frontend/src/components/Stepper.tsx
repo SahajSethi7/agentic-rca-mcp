@@ -40,6 +40,21 @@ export function stageOrdinal(stage: Stage) {
   return `Stage ${idx + 1} of ${FLOW.length}`;
 }
 
+function formatClock(value?: number) {
+  if (!value) return null;
+  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(value);
+}
+
+function formatDuration(ms?: number | null) {
+  if (ms == null || ms < 0) return null;
+  if (ms < 1000) return "<1s";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes}m ${String(rest).padStart(2, "0")}s`;
+}
+
 function StageIcon({ done, current, index }: { done: boolean; current: boolean; index: number }) {
   const cls = done
     ? "border-att-500 bg-att-500 text-white"
@@ -64,7 +79,7 @@ export function ActivityTrace({ activity = [], compact = false }: { activity?: A
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white">
+    <div className="rounded-lg border border-slate-200 bg-white" aria-live="polite">
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
         <div className="flex items-center gap-2">
           <p className="text-[13px] font-black text-ink">Live Activity Feed</p>
@@ -76,17 +91,29 @@ export function ActivityTrace({ activity = [], compact = false }: { activity?: A
         <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-bold text-ink-muted">{activity.length} events</span>
       </div>
       <ol className="divide-y divide-slate-100">
-        {visible.map((item, index) => (
+        {visible.map((item, index) => {
+          const fullIndex = compact ? Math.max(activity.length - visible.length, 0) + index : index;
+          const previous = activity[fullIndex - 1];
+          const clock = formatClock(item.at);
+          const duration = formatDuration(item.elapsed_ms ?? (item.at && previous?.at ? item.at - previous.at : null));
+          return (
           <li key={`${item.stage}-${index}-${item.title}`} className="px-4 py-3">
             <div className="grid gap-3 sm:grid-cols-[86px_minmax(0,1fr)]">
               <span className="text-[12px] font-mono font-bold text-ink-muted">{LABEL[item.stage] ?? item.stage}</span>
               <div className="min-w-0">
                 <div className="flex items-start gap-2">
                   <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${
-                    item.stage === "error" ? "bg-red-500" : item.stage === "done" ? "bg-att-500" : "bg-att-600"
+                    item.stage === "error" ? "bg-danger-500" : item.stage === "done" ? "bg-att-500" : "bg-att-600"
                   }`} />
                   <div className="min-w-0 flex-1">
-                    <p className="break-words text-[13px] font-black text-ink">{item.title}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="break-words text-[13px] font-black text-ink">{item.title}</p>
+                      {(clock || duration) && (
+                        <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[10.5px] font-bold text-ink-muted">
+                          {[clock, duration ? `+${duration}` : null].filter(Boolean).join(" · ")}
+                        </span>
+                      )}
+                    </div>
                     {item.detail && <p className="mt-1 break-words text-[12.5px] leading-5 text-ink-soft">{item.detail}</p>}
                     {item.substeps && item.substeps.length > 0 && (
                       <ul className="mt-2 space-y-1">
@@ -112,7 +139,7 @@ export function ActivityTrace({ activity = [], compact = false }: { activity?: A
               </div>
             </div>
           </li>
-        ))}
+        );})}
       </ol>
     </div>
   );
@@ -129,7 +156,7 @@ export default function Stepper({ stage, round }: { stage: Stage; round?: number
   const stageLabel = stageOrdinal(stage);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
+    <div className="rounded-lg border border-slate-200 bg-white p-4" aria-live="polite">
       <div className="overflow-x-auto report-scroll pb-2">
         <div className="flex min-w-[760px] items-start">
           {FLOW.map((s, i) => {

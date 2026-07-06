@@ -20,12 +20,12 @@ from typing import Any, Callable
 
 from agent.tools import run_all_checks
 from config import Settings, get_settings
-from memory import append_memory_to_context, search_past_rca_memory
+from memory import append_memory_to_context, append_rca_to_memory, search_past_rca_memory
 from prompts import build_revise_messages
 from providers.base import RCAProvider
 from rca_agent import build_provider, generate_rca
 from sanitizer import sanitize_rca_input
-from schemas import CritiqueResult, RCAInput, RCAGenerationReport, RCAReport
+from schemas import CritiqueResult, RCAGenerationReport, RCAInput, RCAReport
 from validation import validate_rca
 
 logger = logging.getLogger("agentic_rca.orchestrator")
@@ -144,6 +144,7 @@ class RCAAgent:
         if sanitizer_findings:
             logger.info("Sanitizer findings: %s", sanitizer_findings)
 
+        memory_writeback_input = rca_input
         memory_search = None
         memory_matches = []
         if self.settings.memory_enabled:
@@ -174,6 +175,7 @@ class RCAAgent:
             "validation_model": None,
             "memory_matches": [match.model_dump(mode="json") for match in memory_matches],
             "memory_retrieval_mode": memory_search.retrieval_mode if memory_search else "disabled",
+            "memory_writeback": None,
         }
 
         planning_substeps = [
@@ -380,6 +382,42 @@ class RCAAgent:
                 )
 
         report = report.model_copy(update={"known_issue_matches": memory_matches})
+
+        if self.settings.memory_writeback_enabled:
+            try:
+                writeback = append_rca_to_memory(
+                    memory_writeback_input,
+                    report,
+                    self.settings.memory_path,
+                )
+                self.last_run_stats["memory_writeback"] = {
+                    "incident_id": writeback.incident_id,
+                    "row_number": writeback.row_number,
+                    "memory_path": str(writeback.memory_path),
+                }
+                report = report.model_copy(
+                    update={
+                        "validation_notes": [
+                            *report.validation_notes,
+                            f"[memory] added this RCA to past RCA memory as {writeback.incident_id}.",
+                        ]
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001 - memory write-back is fail-soft
+                logger.warning("RCA memory write-back failed; continuing.", exc_info=True)
+                self.last_run_stats["memory_writeback"] = {
+                    "error": type(exc).__name__,
+                    "memory_path": str(self.settings.memory_path),
+                }
+                report = report.model_copy(
+                    update={
+                        "validation_notes": [
+                            *report.validation_notes,
+                            f"[memory] write-back failed: {type(exc).__name__}.",
+                        ]
+                    }
+                )
+
         self.last_run_stats["confidence"] = report.confidence
         emit("done", confidence=report.confidence)
         return report

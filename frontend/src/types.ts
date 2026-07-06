@@ -62,6 +62,8 @@ export interface ActivityItem {
   detail?: string;
   substeps?: string[];
   files?: string[];
+  at?: number;
+  elapsed_ms?: number;
 }
 
 export interface RunState {
@@ -74,9 +76,12 @@ export interface RunState {
   report?: RCAReport;
   urls?: RunUrls;
   error?: RunError | null;
+  created_at?: number;
+  updated_at?: number;
+  completed_at?: number;
 }
 
-export interface AnalyzeResponse { job_id: string; runs: { index: number; method: Method }[]; }
+export interface AnalyzeResponse { job_id: string; runs: { index: number; method: Method }[]; started_at?: string; }
 
 export interface MemoryMeta {
   enabled: boolean;

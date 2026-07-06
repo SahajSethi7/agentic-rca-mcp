@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import math
 import re
+import threading
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, TypedDict
 
-from schemas import KnownIssueMatch, RCAInput
+from schemas import KnownIssueMatch, RCAInput, RCAReport
 
 MEMORY_COLUMNS = [
     "incident_id",
@@ -82,6 +85,8 @@ GENERIC_ROOT_CAUSES = {
     "operational issue",
 }
 
+_WRITEBACK_LOCK = threading.Lock()
+
 
 @dataclass(frozen=True)
 class MemorySearch:
@@ -90,6 +95,13 @@ class MemorySearch:
     retrieval_mode: str
     context_match_count: int = 0
     warning: str | None = None
+
+
+@dataclass(frozen=True)
+class MemoryWriteBack:
+    incident_id: str
+    row_number: int
+    memory_path: Path
 
 
 class MemoryState(TypedDict, total=False):
@@ -455,6 +467,130 @@ def search_past_rca_memory(
 def get_past_rca_memory_count(memory_path: Path) -> int:
     """Return the number of usable RCA memory records in the workbook."""
     return sum(1 for record in _load_records(memory_path) if record.get("incident_id"))
+
+
+def _clip_excel_text(value: str | None, limit: int = 8000) -> str:
+    text = _text(value)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 14].rstrip() + " ...[truncated]"
+
+
+def _join_short(items: list[str], *, limit: int = 8000) -> str:
+    return _clip_excel_text("; ".join(item.strip() for item in items if item.strip()), limit)
+
+
+def _generated_incident_id(rca_input: RCAInput, report: RCAReport, timestamp: datetime) -> str:
+    digest = sha256(
+        "|".join(
+            [
+                rca_input.problem_statement,
+                report.root_cause,
+                report.method or rca_input.method,
+                timestamp.isoformat(timespec="seconds"),
+            ]
+        ).encode("utf-8")
+    ).hexdigest()[:8].upper()
+    return f"AUTO-{timestamp.strftime('%Y%m%d-%H%M%S')}-{digest}"
+
+
+def _build_memory_writeback_record(
+    rca_input: RCAInput,
+    report: RCAReport,
+    *,
+    timestamp: datetime,
+) -> dict[str, str]:
+    recommendations = [item for item in report.recommendations if item.strip()]
+    tags = [
+        f"method:{report.method or rca_input.method}",
+        "source:auto-rca-run",
+    ]
+    if rca_input.severity:
+        tags.append(f"severity:{rca_input.severity}")
+    if rca_input.system_area:
+        tags.append(f"system_area:{rca_input.system_area}")
+    if report.source_model:
+        tags.append(f"model:{report.source_model}")
+
+    evidence_parts = []
+    if report.evidence_needed:
+        evidence_parts.append("Evidence needed: " + _join_short(report.evidence_needed, limit=4000))
+    if report.validation_notes:
+        evidence_parts.append("Validation notes: " + _join_short(report.validation_notes, limit=4000))
+
+    return {
+        "incident_id": _generated_incident_id(rca_input, report, timestamp),
+        "date": timestamp.date().isoformat(),
+        "system_area": _clip_excel_text(rca_input.system_area),
+        "service_name": "",
+        "error_signature": "",
+        "problem_statement": _clip_excel_text(rca_input.problem_statement),
+        "symptoms": _clip_excel_text(rca_input.context or ""),
+        "root_cause": _clip_excel_text(report.root_cause),
+        "immediate_fix": _clip_excel_text(recommendations[0] if recommendations else ""),
+        "long_term_fix": _join_short(recommendations[1:]),
+        "evidence_checked": _clip_excel_text(" | ".join(evidence_parts)),
+        "owner_team": "",
+        "tags": _join_short(tags, limit=2000),
+        "confidence": report.confidence,
+        "status": "generated",
+    }
+
+
+def append_rca_to_memory(
+    rca_input: RCAInput,
+    report: RCAReport,
+    memory_path: Path,
+) -> MemoryWriteBack:
+    """Append a completed RCA run to the past-RCA Excel memory workbook.
+
+    This is intentionally separate from retrieval so write-back can be enabled
+    only when the operator wants generated reports to become future memory.
+    """
+    from openpyxl import Workbook, load_workbook
+
+    timestamp = datetime.now(timezone.utc)
+    record = _build_memory_writeback_record(rca_input, report, timestamp=timestamp)
+
+    with _WRITEBACK_LOCK:
+        memory_path.parent.mkdir(parents=True, exist_ok=True)
+        if memory_path.exists():
+            workbook = load_workbook(memory_path)
+            if "Past RCA Memory" in workbook.sheetnames:
+                sheet = workbook["Past RCA Memory"]
+            else:
+                sheet = workbook.create_sheet("Past RCA Memory")
+        else:
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "Past RCA Memory"
+
+        existing_headers = [
+            _text(sheet.cell(row=1, column=column).value)
+            for column in range(1, sheet.max_column + 1)
+        ]
+        if not any(existing_headers):
+            for column, header in enumerate(MEMORY_COLUMNS, start=1):
+                sheet.cell(row=1, column=column, value=header)
+            headers = MEMORY_COLUMNS
+        else:
+            headers = existing_headers
+            for header in MEMORY_COLUMNS:
+                if header not in headers:
+                    headers.append(header)
+                    sheet.cell(row=1, column=len(headers), value=header)
+
+        row_number = sheet.max_row + 1
+        for column, header in enumerate(headers, start=1):
+            sheet.cell(row=row_number, column=column, value=record.get(header, ""))
+
+        workbook.save(memory_path)
+
+    return MemoryWriteBack(
+        incident_id=record["incident_id"],
+        row_number=row_number,
+        memory_path=memory_path,
+    )
 
 
 def build_memory_matches_workbook(

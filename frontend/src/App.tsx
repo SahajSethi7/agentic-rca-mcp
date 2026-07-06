@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import type { ActivityItem, MemoryMeta, Method, RCAReport, RunState, RunUrls, SSEvent, UiMeta } from "./types";
 import { METHOD_SHORT } from "./types";
 import { fetchMeta, startAnalyze, subscribe, type AnalyzePayload } from "./api";
@@ -7,7 +7,16 @@ import AnalysisForm from "./components/AnalysisForm";
 import RunCard from "./components/RunCard";
 import Report from "./components/Report";
 import { ActivityTrace } from "./components/Stepper";
-import { CheckIcon } from "./components/icons";
+import {
+  CheckIcon,
+  ClipboardListIcon,
+  CompareIcon,
+  DashboardIcon,
+  DownloadIcon,
+  FileTextIcon,
+  PlusCircleIcon,
+  SettingsIcon,
+} from "./components/icons";
 
 type Surface = "recent" | "new" | "reports" | "run" | "report" | "compare" | "audit" | "exports" | "settings";
 
@@ -23,29 +32,87 @@ const STAGE_TITLE: Record<string, string> = {
   error: "Error",
 };
 
-const NAV: { id: Surface; label: string; icon: string }[] = [
-  { id: "recent", label: "Recent Runs", icon: "D" },
-  { id: "new", label: "New Analysis", icon: "+" },
-  { id: "reports", label: "Reports", icon: "R" },
-  { id: "compare", label: "Compare Methods", icon: "=" },
-  { id: "audit", label: "Audit Logs", icon: "A" },
-  { id: "exports", label: "Exports", icon: "E" },
-  { id: "settings", label: "Settings", icon: "*" },
+const NAV: { id: Surface; label: string; icon: ComponentType<{ className?: string }> }[] = [
+  { id: "recent", label: "Recent Runs", icon: DashboardIcon },
+  { id: "new", label: "New Analysis", icon: PlusCircleIcon },
+  { id: "reports", label: "Reports", icon: FileTextIcon },
+  { id: "compare", label: "Compare Methods", icon: CompareIcon },
+  { id: "audit", label: "Audit Logs", icon: ClipboardListIcon },
+  { id: "exports", label: "Exports", icon: DownloadIcon },
+  { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
 const RECENT_RUN_LIMIT = 40;
+const RUN_HISTORY_STORAGE_KEY = "rcaAssistant.runHistory.v1";
 
 function runKey(run: Pick<RunState, "index" | "job_id">) {
   return `${run.job_id ?? "session"}:${run.index}`;
 }
 
-function activityFromStage(e: Extract<SSEvent, { type: "stage" }>): ActivityItem {
+function parseRouteHash(): { surface: Surface; runKey?: string | null } {
+  const raw = window.location.hash.replace(/^#\/?/, "");
+  const [surface, encodedKey] = raw.split("/");
+  const known = new Set<Surface>(["recent", "new", "reports", "run", "report", "compare", "audit", "exports", "settings"]);
+  if (known.has(surface as Surface)) {
+    return {
+      surface: surface as Surface,
+      runKey: encodedKey ? decodeURIComponent(encodedKey) : undefined,
+    };
+  }
+  return { surface: "new" };
+}
+
+function routeHash(surface: Surface, key?: string | null) {
+  const needsKey = (surface === "run" || surface === "report") && key;
+  return needsKey ? `#/${surface}/${encodeURIComponent(key)}` : `#/${surface}`;
+}
+
+function loadStoredRunHistory(): RunState[] {
+  try {
+    const raw = window.localStorage.getItem(RUN_HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.slice(0, RECENT_RUN_LIMIT) : [];
+  } catch {
+    return [];
+  }
+}
+
+function compactRunForStorage(run: RunState): RunState {
+  const { activity, ...rest } = run;
+  return rest;
+}
+
+function mergeRuns(primary: RunState[], secondary: RunState[] = []) {
+  const seen = new Set<string>();
+  return [...primary, ...secondary]
+    .filter((run) => {
+      const key = runKey(run);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, RECENT_RUN_LIMIT);
+}
+
+function formatTimestamp(value?: number | null) {
+  if (!value) return "Not recorded";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(value);
+}
+
+function activityFromStage(e: Extract<SSEvent, { type: "stage" }>, at = Date.now()): ActivityItem {
   return {
     stage: e.stage,
     title: `${STAGE_TITLE[e.stage] ?? e.stage}${e.round ? ` round ${e.round}` : ""}`,
     detail: e.detail,
     substeps: e.substeps,
     files: e.files,
+    at,
   };
 }
 
@@ -83,19 +150,21 @@ function Sidebar({
       <nav className="flex-1 space-y-1 px-3 py-5">
         {NAV.map((item) => {
           const selected = active === item.id || (active === "run" && item.id === "new") || (active === "report" && item.id === "reports");
+          const Icon = item.icon;
           return (
             <button
               key={item.id}
               type="button"
               onClick={() => onNavigate(item.id)}
+              aria-current={selected ? "page" : undefined}
               className={`flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-[14px] font-bold transition ${
                 selected
-                  ? "bg-att-500 text-white shadow-[0_10px_24px_-18px_rgba(0,159,219,.9)]"
+                  ? "bg-white/10 text-white ring-1 ring-att-400/50"
                   : "text-slate-300 hover:bg-white/10 hover:text-white"
               }`}
             >
-              <span className={`grid h-6 w-6 place-items-center rounded-md text-[12px] font-black ${selected ? "bg-white/15" : "bg-white/5"}`}>
-                {item.icon}
+              <span className={`grid h-6 w-6 place-items-center rounded-md ${selected ? "bg-att-400/20 text-att-200" : "bg-white/5 text-slate-400"}`}>
+                <Icon className="h-4 w-4" />
               </span>
               {item.label}
             </button>
@@ -145,6 +214,7 @@ function MobileNav({ active, onNavigate }: { active: Surface; onNavigate: (s: Su
             key={item.id}
             type="button"
             onClick={() => onNavigate(item.id)}
+            aria-current={active === item.id ? "page" : undefined}
             className={`h-9 flex-shrink-0 rounded-md px-3 text-[12px] font-black ${
               active === item.id ? "bg-att-500 text-white" : "border border-slate-200 bg-white text-ink-soft"
             }`}
@@ -179,6 +249,22 @@ function SurfaceHeader({ eyebrow, title, body }: { eyebrow: string; title: strin
   );
 }
 
+function RunStatusChip({ run }: { run: RunState }) {
+  const running = !run.report && !run.error;
+  const label = run.error ? "Failed" : run.report ? "Ready" : run.stage === "queued" ? "Queued" : "Running";
+  const cls = run.error
+    ? "bg-danger-50 text-danger-700 ring-1 ring-danger-200"
+    : run.report
+      ? "bg-att-50 text-att-700 ring-1 ring-att-100"
+      : "bg-att-100 text-att-800 ring-1 ring-att-200 pulse-ring";
+  return (
+    <span className={`inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-extrabold ${cls}`}>
+      {running && <span className="h-1.5 w-1.5 rounded-full bg-att-600" />}
+      {label}
+    </span>
+  );
+}
+
 function RunList({
   runs,
   onOpenRun,
@@ -194,9 +280,10 @@ function RunList({
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white shadow-card">
-      <div className="grid grid-cols-[minmax(0,1fr)_130px_120px_170px] gap-3 border-b border-slate-200 px-4 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-ink-muted max-md:hidden">
+      <div className="grid grid-cols-[minmax(0,1fr)_130px_140px_120px_170px] gap-3 border-b border-slate-200 px-4 py-3 text-[11px] font-extrabold uppercase tracking-[0.12em] text-ink-muted max-md:hidden">
         <span>Incident</span>
         <span>Method</span>
+        <span>Updated</span>
         <span>Status</span>
         <span>Actions</span>
       </div>
@@ -204,17 +291,17 @@ function RunList({
         {runs.map((run) => {
           const key = runKey(run);
           return (
-          <div key={key} className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_130px_120px_170px] md:items-center">
+          <div key={key} className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_130px_140px_120px_170px] md:items-center">
             <div className="min-w-0">
-              <p className="break-words text-[13.5px] font-black text-ink">{run.report?.problem || `Run ${run.index + 1}`}</p>
-              <p className="mt-1 text-[12px] text-ink-muted">{run.activity?.length ?? 0} stage events</p>
+              <p className="break-words text-[13.5px] font-semibold text-ink">{run.report?.problem || `Run ${run.index + 1}`}</p>
+              <p className="mt-1 text-[12px] text-ink-muted">
+                {run.activity?.length ?? 0} stage events
+                <span className="md:hidden"> · {formatTimestamp(run.completed_at ?? run.updated_at ?? run.created_at)}</span>
+              </p>
             </div>
             <p className="text-[13px] font-bold text-ink-soft">{METHOD_SHORT[run.method]}</p>
-            <span className={`w-fit rounded-md px-2 py-1 text-[11px] font-black ${
-              run.error ? "bg-red-50 text-red-700" : run.report ? "bg-att-50 text-att-700" : "bg-att-50 text-att-700"
-            }`}>
-              {run.error ? "Failed" : run.report ? "Ready" : "Running"}
-            </span>
+            <p className="text-[12px] font-semibold text-ink-muted max-md:hidden">{formatTimestamp(run.completed_at ?? run.updated_at ?? run.created_at)}</p>
+            <RunStatusChip run={run} />
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => onOpenRun(key)} className="h-9 rounded-md border border-slate-300 px-3 text-[12px] font-bold text-ink-soft hover:border-att-200 hover:text-att-700">
                 Live Run
@@ -300,7 +387,7 @@ function ExportsView({ runs }: { runs: RunState[] | null }) {
               <p className="mt-1 break-words text-[13px] text-ink-muted">{run.report?.problem}</p>
             </div>
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
             <ExportButton href={run.urls?.pdf_url} label="Download PDF" detail="Printable report artifact" download />
             <ExportButton href={run.urls?.html_url} label="Open HTML Report" detail="Standalone local web report" />
             <ExportButton href={run.urls?.memory_xlsx_url} label="Matching Past RCAs" detail="Excel workbook with threshold-matched records" download />
@@ -336,6 +423,7 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
     "Secret redaction",
     "Prompt fencing",
     "Local audit log",
+    "PDF, HTML, and Excel export",
     "PDF, HTML, and Excel export",
     "Past RCA memory",
     "Method comparison",
@@ -384,7 +472,7 @@ function confidenceRank(report: RCAReport) {
 function itemBadge(item: string, shared: Set<string>) {
   const same = shared.has(normalize(item));
   return (
-    <span className={`ml-2 rounded-md px-2 py-0.5 text-[10.5px] font-black ${same ? "bg-att-50 text-att-700" : "bg-amber-50 text-amber-700"}`}>
+    <span className={`ml-2 rounded-md px-2 py-0.5 text-[10.5px] font-extrabold ${same ? "bg-att-50 text-att-700" : "bg-warn-50 text-warn-700"}`}>
       {same ? "Shared" : "Differs"}
     </span>
   );
@@ -430,12 +518,35 @@ function MethodCompareCard({ run, shared }: { run: RunState; shared: Set<string>
   );
 }
 
+function compareOptionLabel(run: RunState) {
+  const problem = run.report?.problem || `Run ${run.index + 1}`;
+  const short = problem.length > 72 ? `${problem.slice(0, 69)}...` : problem;
+  return `${METHOD_SHORT[run.method]} · ${short}`;
+}
+
 function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
   const ready = runs?.filter((r) => r.report) ?? [];
+  const readyKeys = ready.map(runKey);
+  const readyKeySignature = readyKeys.join("|");
+  const [selectedAKey, setSelectedAKey] = useState("");
+  const [selectedBKey, setSelectedBKey] = useState("");
+
+  useEffect(() => {
+    if (readyKeys.length < 2) return;
+    setSelectedAKey((current) => readyKeys.includes(current) ? current : readyKeys[0]);
+    setSelectedBKey((current) => {
+      const aKey = readyKeys.includes(selectedAKey) ? selectedAKey : readyKeys[0];
+      if (readyKeys.includes(current) && current !== aKey) return current;
+      return readyKeys.find((key) => key !== aKey) ?? "";
+    });
+  }, [readyKeySignature, selectedAKey]);
+
   if (ready.length < 2) {
     return <EmptyState title="Comparison needs two completed methods" body="Turn on Compare methods in New Analysis and wait for both reports to complete." />;
   }
-  const [a, b] = ready;
+
+  const a = ready.find((run) => runKey(run) === selectedAKey) ?? ready[0];
+  const b = ready.find((run) => runKey(run) === selectedBKey && runKey(run) !== runKey(a)) ?? ready.find((run) => runKey(run) !== runKey(a)) ?? ready[1];
   const aItems = [...(a.report?.contributing_factors ?? []), ...(a.report?.recommendations ?? [])].map(normalize);
   const bItems = [...(b.report?.contributing_factors ?? []), ...(b.report?.recommendations ?? [])].map(normalize);
   const shared = new Set(aItems.filter((item) => bItems.includes(item) && item.length > 0));
@@ -445,6 +556,47 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
 
   return (
     <div className="space-y-5">
+      <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-card md:grid-cols-2">
+        <div>
+          <label className="mb-1.5 block text-[12px] font-extrabold uppercase tracking-[0.12em] text-ink-muted" htmlFor="compare-a">
+            Compare A
+          </label>
+          <select
+            id="compare-a"
+            value={runKey(a)}
+            onChange={(event) => {
+              const next = event.target.value;
+              setSelectedAKey(next);
+              if (next === selectedBKey) {
+                setSelectedBKey(readyKeys.find((key) => key !== next) ?? "");
+              }
+            }}
+            className="h-11 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-[13px] font-semibold text-ink-soft"
+          >
+            {ready.map((run) => (
+              <option key={runKey(run)} value={runKey(run)}>{compareOptionLabel(run)}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-[12px] font-extrabold uppercase tracking-[0.12em] text-ink-muted" htmlFor="compare-b">
+            Compare B
+          </label>
+          <select
+            id="compare-b"
+            value={runKey(b)}
+            onChange={(event) => setSelectedBKey(event.target.value)}
+            className="h-11 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-[13px] font-semibold text-ink-soft"
+          >
+            {ready.map((run) => (
+              <option key={runKey(run)} value={runKey(run)} disabled={runKey(run) === runKey(a)}>
+                {compareOptionLabel(run)}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-card md:grid-cols-3">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-full bg-att-50 text-[13px] font-black text-att-700">{shared.size}</span>
@@ -454,7 +606,7 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-amber-50 text-[13px] font-black text-amber-700">{rootSame ? 0 : 1}</span>
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-warn-50 text-[13px] font-black text-warn-700">{rootSame ? 0 : 1}</span>
           <div>
             <p className="text-[13px] font-black text-ink">Root-cause difference</p>
             <p className="text-[12px] text-ink-muted">{rootSame ? "Root cause text matches" : "Root cause text differs"}</p>
@@ -501,16 +653,57 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
   );
 }
 
+type CompletionToast = { key: string; method: Method; problem?: string };
+
 export default function App() {
+  const initialRoute = typeof window !== "undefined" ? parseRouteHash() : { surface: "new" as Surface };
   const [runs, setRuns] = useState<RunState[] | null>(null);
-  const [runHistory, setRunHistory] = useState<RunState[]>([]);
+  const [runHistory, setRunHistory] = useState<RunState[]>(loadStoredRunHistory);
   const [busy, setBusy] = useState(false);
   const [uiMeta, setUiMeta] = useState<UiMeta | null>(null);
-  const [activeSurface, setActiveSurface] = useState<Surface>("new");
-  const [selectedRunKey, setSelectedRunKey] = useState<string | null>(null);
+  const [activeSurface, setActiveSurface] = useState<Surface>(initialRoute.surface);
+  const [selectedRunKey, setSelectedRunKey] = useState<string | null>(initialRoute.runKey ?? null);
   const [lastPayload, setLastPayload] = useState<AnalyzePayload | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [completionToasts, setCompletionToasts] = useState<CompletionToast[]>([]);
   const cleanupRef = useRef<null | (() => void)>(null);
+  const toastedRunKeysRef = useRef(new Set<string>());
+  const completionToast = completionToasts[0] ?? null;
+
+  function navigate(surface: Surface, key?: string | null) {
+    if (key !== undefined) setSelectedRunKey(key);
+    setActiveSurface(surface);
+  }
+
+  function dismissToast(key: string) {
+    setCompletionToasts((prev) => prev.filter((toast) => toast.key !== key));
+  }
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const route = parseRouteHash();
+      setActiveSurface(route.surface);
+      if (route.runKey !== undefined) setSelectedRunKey(route.runKey);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
+    const next = routeHash(activeSurface, selectedRunKey);
+    if (window.location.hash !== next) {
+      window.location.hash = next;
+    }
+  }, [activeSurface, selectedRunKey]);
+
+  useEffect(() => {
+    try {
+      const compact = runHistory.slice(0, RECENT_RUN_LIMIT).map(compactRunForStorage);
+      window.localStorage.setItem(RUN_HISTORY_STORAGE_KEY, JSON.stringify(compact));
+    } catch {
+      // History is an enhancement; the UI can continue without localStorage.
+    }
+  }, [runHistory]);
 
   useEffect(() => {
     let cancelled = false;
@@ -544,6 +737,7 @@ export default function App() {
 
     const demo = window.__RCA_DEMO__;
     if (demo?.runs?.length) {
+      const loadedAt = Date.now();
       const demoRuns: RunState[] = demo.runs.map((r) => ({
         index: r.index,
         job_id: "demo",
@@ -551,16 +745,20 @@ export default function App() {
         stage: "done" as const,
         report: r.report,
         urls: r.urls,
+        created_at: loadedAt,
+        updated_at: loadedAt,
+        completed_at: loadedAt,
         activity: [
           {
             stage: "done" as const,
             title: "Demo report loaded",
             detail: "Loaded a pre-generated RCA report for interface review.",
+            at: loadedAt,
           },
         ],
       }));
       setRuns(demoRuns);
-      setRunHistory(demoRuns.slice(0, RECENT_RUN_LIMIT));
+      setRunHistory((prev) => mergeRuns(demoRuns, prev));
       setSelectedRunKey(runKey(demoRuns[0]));
       setActiveSurface(demo.runs.length > 1 ? "compare" : "report");
     }
@@ -573,22 +771,28 @@ export default function App() {
   useEffect(() => {
     const finished = runs?.filter((run) => run.report || run.error) ?? [];
     if (!finished.length) return;
-    setRunHistory((prev) => {
-      const next = [...finished, ...prev];
-      const seen = new Set<string>();
-      return next
-        .filter((run) => {
-          const key = runKey(run);
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        })
-        .slice(0, RECENT_RUN_LIMIT);
+    setRunHistory((prev) => mergeRuns(finished, prev));
+  }, [runs]);
+
+  useEffect(() => {
+    const completed = runs?.filter((run) => run.report && run.job_id !== "demo") ?? [];
+    completed.forEach((run) => {
+      const key = runKey(run);
+      if (toastedRunKeysRef.current.has(key)) return;
+      toastedRunKeysRef.current.add(key);
+      setCompletionToasts((prev) => [...prev, { key, method: run.method, problem: run.report?.problem }]);
     });
   }, [runs]);
 
+  useEffect(() => {
+    if (!completionToast) return;
+    const id = window.setTimeout(() => dismissToast(completionToast.key), 8000);
+    return () => window.clearTimeout(id);
+  }, [completionToast?.key]);
+
   function onEvent(e: SSEvent) {
     if (e.type === "complete") return;
+    const at = Date.now();
     setRuns((prev) => {
       if (!prev) return prev;
       const i = e.run;
@@ -599,7 +803,8 @@ export default function App() {
           ...next[i],
           stage: e.stage,
           round: e.round,
-          activity: [...(next[i].activity || []), activityFromStage(e)],
+          updated_at: at,
+          activity: [...(next[i].activity || []), activityFromStage(e, at)],
         };
       } else if (e.type === "result") {
         const memoryCount = e.report.known_issue_matches?.length ?? 0;
@@ -607,6 +812,9 @@ export default function App() {
           ...next[i],
           stage: "done",
           report: e.report,
+          urls: { pdf_url: e.pdf_url, html_url: e.html_url, memory_xlsx_url: e.memory_xlsx_url },
+          updated_at: at,
+          completed_at: at,
           urls: { pdf_url: e.pdf_url, html_url: e.html_url, memory_xlsx_url: e.memory_xlsx_url },
           activity: [
             ...(next[i].activity || []),
@@ -620,7 +828,9 @@ export default function App() {
                   ? `Past RCA memory: ${memoryCount} similar incident${memoryCount === 1 ? "" : "s"} surfaced.`
                   : "Past RCA memory: no similar incident crossed the threshold.",
                 "PDF, HTML, and matching-past-RCA Excel downloads are ready.",
+                "PDF, HTML, and matching-past-RCA Excel downloads are ready.",
               ],
+              at,
             },
           ],
         };
@@ -629,12 +839,15 @@ export default function App() {
           ...next[i],
           stage: "error",
           error: e.error,
+          updated_at: at,
+          completed_at: at,
           activity: [
             ...(next[i].activity || []),
             {
               stage: "error",
               title: "Run failed",
               detail: e.error.message || "The RCA pipeline returned an error.",
+              at,
             },
           ],
         };
@@ -647,27 +860,48 @@ export default function App() {
     cleanupRef.current?.();
     setBusy(true);
     setLastPayload(payload);
-    setStartedAt(Date.now());
-    setActiveSurface("run");
+    const started = Date.now();
+    setStartedAt(started);
+    navigate("run");
     try {
       const res = await startAnalyze(payload);
-      setSelectedRunKey(`${res.job_id}:0`);
+      const firstKey = `${res.job_id}:0`;
+      navigate("run", firstKey);
       setRuns(res.runs.map((r) => ({
         index: r.index,
         job_id: res.job_id,
         method: r.method,
         stage: "queued" as const,
+        created_at: started,
+        updated_at: started,
         activity: [{
           stage: "queued",
           title: "Queued",
           detail: "The incident has been accepted by the web worker.",
+          at: started,
         }],
       })));
       cleanupRef.current = subscribe(res.job_id, onEvent, () => setBusy(false));
     } catch (err) {
+      const failedAt = Date.now();
       setBusy(false);
-      const failedRun = { index: 0, job_id: "failed-start", method: payload.method as Method, stage: "error" as const, error: { message: String(err) } };
-      setSelectedRunKey(runKey(failedRun));
+      const failedRun = {
+        index: 0,
+        job_id: "failed-start",
+        method: payload.method as Method,
+        stage: "error" as const,
+        error: { message: String(err) },
+        created_at: started,
+        updated_at: failedAt,
+        completed_at: failedAt,
+        activity: [{
+          stage: "error" as const,
+          title: "Run failed to start",
+          detail: String(err),
+          at: failedAt,
+        }],
+      };
+      navigate("run", runKey(failedRun));
       setRuns([failedRun]);
     }
   }
@@ -698,12 +932,10 @@ export default function App() {
 
   const surfaceContent = useMemo(() => {
     function openReport(key: string) {
-      setSelectedRunKey(key);
-      setActiveSurface("report");
+      navigate("report", key);
     }
     function openRun(key: string) {
-      setSelectedRunKey(key);
-      setActiveSurface("run");
+      navigate("run", key);
     }
 
     if (activeSurface === "new") {
@@ -726,7 +958,7 @@ export default function App() {
           <EmptyState
             title="No live run"
             body="Start a new analysis to see the live stage activity."
-            action={<button type="button" onClick={() => setActiveSurface("new")} className="h-10 rounded-md bg-att-600 px-4 text-[13px] font-black text-white">New Analysis</button>}
+            action={<button type="button" onClick={() => navigate("new")} className="h-10 rounded-md bg-att-600 px-4 text-[13px] font-black text-white">New Analysis</button>}
           />
         );
       }
@@ -740,7 +972,7 @@ export default function App() {
               uiMeta={uiMeta}
               startedAt={startedAt}
               onOpenReport={(index) => openReport(runKey({ job_id: run.job_id, index }))}
-              onOpenCompare={() => setActiveSurface("compare")}
+              onOpenCompare={() => navigate("compare")}
             />
           ))}
         </div>
@@ -753,7 +985,7 @@ export default function App() {
           <EmptyState
             title="No report ready"
             body="A completed RCA report will appear here after generation and artifact rendering."
-            action={<button type="button" onClick={() => setActiveSurface(runs?.length ? "run" : "new")} className="h-10 rounded-md bg-att-600 px-4 text-[13px] font-black text-white">{runs?.length ? "View Live Run" : "New Analysis"}</button>}
+            action={<button type="button" onClick={() => navigate(runs?.length ? "run" : "new")} className="h-10 rounded-md bg-att-600 px-4 text-[13px] font-black text-white">{runs?.length ? "View Live Run" : "New Analysis"}</button>}
           />
         );
       }
@@ -762,13 +994,13 @@ export default function App() {
           report={selectedReportRun.report}
           urls={selectedReportRun.urls as RunUrls | undefined}
           payload={lastPayload}
-          onBack={() => setActiveSurface("reports")}
-          onRunAgain={() => setActiveSurface("new")}
+          onBack={() => navigate("reports")}
+          onRunAgain={() => navigate("new")}
         />
       );
     }
 
-    if (activeSurface === "compare") return <CompareMethodsView runs={runs} />;
+    if (activeSurface === "compare") return <CompareMethodsView runs={allRuns} />;
     if (activeSurface === "recent") return <RunList runs={allRuns} onOpenRun={openRun} onOpenReport={openReport} />;
     if (activeSurface === "reports") return <ReportsIndex runs={allRuns} onOpenReport={openReport} />;
     if (activeSurface === "exports") return <ExportsView runs={allRuns} />;
@@ -784,6 +1016,7 @@ export default function App() {
     report: ["RCA Report", "Report Review", "Structured RCA output with export links."],
     compare: ["Compare Methods", "Compare RCA Methods", "Review completed methods side by side."],
     audit: ["Audit Logs", "Run Activity & Audit Status", "Live RCA worker activity for the current session."],
+    exports: ["Exports", "Artifacts", "PDF, HTML, and matching-past-RCA Excel outputs generated by completed runs."],
     exports: ["Exports", "Artifacts", "PDF and HTML outputs generated by completed runs."],
     settings: ["Settings", "Workspace Settings", "Runtime metadata and available capabilities."],
   }[activeSurface];
@@ -792,14 +1025,14 @@ export default function App() {
     <div className="min-h-full bg-[linear-gradient(135deg,#ffffff_0%,#eaf8fe_48%,#f5fbfe_100%)]">
       <Sidebar
         active={activeSurface}
-        onNavigate={setActiveSurface}
+        onNavigate={navigate}
         memoryLabel={memoryValue}
         memoryEnabled={memoryMeta?.enabled ?? true}
         provider={uiMeta?.provider || "ollama"}
       />
       <div className="lg:pl-[264px]">
-        <TopBar uiMeta={uiMeta} onAuditLogs={() => setActiveSurface("audit")} onSettings={() => setActiveSurface("settings")} />
-        <MobileNav active={activeSurface} onNavigate={setActiveSurface} />
+        <TopBar uiMeta={uiMeta} onAuditLogs={() => navigate("audit")} onSettings={() => navigate("settings")} />
+        <MobileNav active={activeSurface} onNavigate={navigate} />
         <main className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6">
           {activeSurface !== "new" && <SurfaceHeader eyebrow={header[0]} title={header[1]} body={header[2]} />}
           {surfaceContent}
@@ -808,6 +1041,40 @@ export default function App() {
           AI-generated RCA drafts require validation against logs, metrics, and deployment timelines before action.
         </footer>
       </div>
+      {completionToast && (
+        <div className="fixed bottom-4 right-4 z-50 w-[min(360px,calc(100vw-2rem))] rounded-lg border border-att-200 bg-white p-4 shadow-hero" role="status" aria-live="polite">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 grid h-8 w-8 flex-shrink-0 place-items-center rounded-md bg-att-600 text-white">
+              <CheckIcon className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-black text-ink">Report ready</p>
+              <p className="mt-1 line-clamp-2 text-[12.5px] leading-5 text-ink-soft">
+                {METHOD_SHORT[completionToast.method]} is complete{completionToast.problem ? `: ${completionToast.problem}` : "."}
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigate("report", completionToast.key);
+                    dismissToast(completionToast.key);
+                  }}
+                  className="h-9 rounded-md bg-att-600 px-3 text-[12px] font-black text-white hover:bg-att-700"
+                >
+                  Open
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dismissToast(completionToast.key)}
+                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-[12px] font-bold text-ink-soft hover:border-att-200 hover:text-att-700"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 # Agentic RCA — Web UI Guide
 
-A walkthrough of the Phase 6 web interface: how to start it, run an analysis,
+A walkthrough of the web interface: how to start it, run an analysis,
 read the report, download a PDF, and compare two methods. The UI is a thin
 client over the existing FastAPI service — everything it does is also available
 from the CLI and the MCP tool, but the browser is the friendliest way in.
@@ -125,7 +125,7 @@ in order, are:
 4. **Revise** — findings are fed back to the model for a bounded fix (max 2
    rounds). (Shows the round number.)
 5. **Validate** — an optional stronger reviewer model sets the final confidence.
-6. **Render** — the PDF, HTML and JSON artifacts are written.
+6. **Render** — the PDF, HTML, and internal structured artifacts are written.
 
 The planning and activity trace now include safe substeps such as selected
 method, Excel memory matches, model generation, deterministic critique,
@@ -176,7 +176,7 @@ In the report card header:
   printing to PDF yourself or sharing the single file).
 
 Artifacts for each web run are also written to disk under
-`outputs/ui/<job_id>/` (one PDF, HTML and JSON per method). The canonical
+`outputs/ui/<job_id>/` (one PDF, HTML, and internal JSON artifact per method). The canonical
 `outputs/Agentic_RCA.{pdf,json,html}` is written by the CLI and MCP entry
 points.
 

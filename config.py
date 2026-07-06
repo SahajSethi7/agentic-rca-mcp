@@ -34,6 +34,10 @@ class Settings:
     memory_path: Path = Path(os.getenv("RCA_MEMORY_PATH", "./data/past_rca_memory_sample_repaired.xlsx"))
     memory_max_matches: int = int(os.getenv("RCA_MEMORY_MAX_MATCHES", "10"))
     memory_min_score: float = float(os.getenv("RCA_MEMORY_MIN_SCORE", "0.50"))
+    memory_writeback_enabled: bool = (
+        os.getenv("RCA_MEMORY_WRITEBACK_ENABLED", "false").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
     eval_models: tuple[str, ...] = tuple(
         model.strip()
         for model in os.getenv("RCA_EVAL_MODELS", "qwen3.5:9b,llama3.2:latest").split(",")

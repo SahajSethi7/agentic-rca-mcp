@@ -7,8 +7,8 @@ agent's stages (planning -> generating -> critiquing -> revising -> validating
 
 A single job may contain one or two *runs* (the Day-38 method-comparison
 toggle runs the same problem through two methods side by side). Each run writes
-its own PDF/HTML/JSON artifacts under ``OUTPUT_DIR/ui/<job_id>/`` and is
-audit-logged exactly like every other entry point.
+its own PDF/HTML plus an internal JSON artifact under ``OUTPUT_DIR/ui/<job_id>/``
+and is audit-logged exactly like every other entry point.
 """
 
 from __future__ import annotations
@@ -214,6 +214,7 @@ class JobManager:
                     "substeps": [
                         "Preparing PDF report.",
                         "Preparing standalone HTML report.",
+                        "Persisting internal structured report.",
                         "Preparing matching past RCA workbook.",
                     ],
                 }
@@ -243,7 +244,6 @@ class JobManager:
                     "files": [
                         pdf_path.name,
                         html_path.name,
-                        json_path.name,
                         memory_matches_path.name,
                     ],
                 }

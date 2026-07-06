@@ -48,6 +48,21 @@ def auth_rotation_input() -> RCAInput:
     )
 
 
+def s3_storage_input() -> RCAInput:
+    return RCAInput(
+        problem_statement=(
+            "On February 28, 2017, Amazon S3 in the US-EAST-1 region began "
+            "returning high error rates after an operator investigating "
+            "slowness in the S3 billing system used a maintenance playbook. "
+            "Object metadata and placement services lost more capacity than "
+            "expected, and recovery took hours because the subsystems had "
+            "grown and had not been fully restarted in years."
+        ),
+        severity="high",
+        system_area="Cloud Storage",
+    )
+
+
 def test_ollama_provider_recovers_invalid_output_after_instructor_retries() -> None:
     provider = OllamaProvider(
         settings=Settings(rca_model="qwen3.5:4b", max_output_tokens=2048)
@@ -65,3 +80,21 @@ def test_ollama_provider_recovers_invalid_output_after_instructor_retries() -> N
     assert "JWKS refresh path" in report.root_cause
     assert len(report.why_chain) >= 3
     assert any("Conservative draft" in note for note in report.validation_notes)
+
+
+def test_ollama_provider_recovers_s3_invalid_output_with_specific_rca() -> None:
+    provider = OllamaProvider(
+        settings=Settings(rca_model="qwen3.5:9b", max_output_tokens=4096)
+    )
+    client = FailingClient()
+    provider.client = client
+
+    report = provider.generate(s3_storage_input(), prompt_version="v3")
+
+    assert report.source_model == "qwen3.5:9b"
+    assert report.confidence == "medium"
+    assert len(report.why_chain) == 5
+    assert "metadata" in report.root_cause
+    assert "placement" in report.root_cause
+    assert "blast-radius guardrails" in report.root_cause
+    assert any("Targeted cloud-storage recovery" in note for note in report.validation_notes)

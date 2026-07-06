@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# OUTPUT_DIR is the only writable artifact path (Phase 5 guardrail);
+# OUTPUT_DIR is the only writable artifact path;
 # docker-compose mounts ./outputs here so PDFs land on the host.
 ENV OUTPUT_DIR=/app/outputs
 RUN mkdir -p /app/outputs

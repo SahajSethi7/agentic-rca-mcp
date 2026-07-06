@@ -44,6 +44,27 @@ Rationale:
   report therefore shows match scores, match reasons, known fixes, and evidence
   checked so humans can validate relevance.
 
+## Post-Demo: Optional RCA Memory Write-Back
+
+The system can now append each successful generated RCA back into the configured
+Excel memory workbook when `RCA_MEMORY_WRITEBACK_ENABLED=true`.
+
+Decision:
+
+- keep retrieval deterministic and local;
+- keep write-back configurable so demos/tests can leave historical memory
+  untouched;
+- append only after the final RCA passes generation, critique, and optional
+  validation;
+- write generated rows with `status=generated`, an `AUTO-*` incident id, the
+  problem/context, root cause, recommendations, confidence, and tags.
+
+Rationale:
+
+- Teams asked for the assistant to learn from newly completed RCA runs.
+- The toggle preserves the original read-only demo behavior when needed.
+- Generated memory rows remain transparent and reviewable in Excel.
+
 ## Demo Step 5: LangChain/LangGraph Boundary
 
 LangGraph is now used opportunistically for the memory retrieval workflow:
