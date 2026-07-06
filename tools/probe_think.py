@@ -1,4 +1,4 @@
-"""Fast probe: which switch actually disables qwen3 'thinking' on Ollama /v1.
+r"""Fast probe: which switch actually disables qwen3 'thinking' on Ollama /v1.
 
 Run WITHOUT rebuilding, piping into the running container:
 
@@ -9,7 +9,9 @@ returns in seconds once the model is warm. We want the variant whose content
 is clean JSON with contains<think>=False.
 """
 import time
+
 from openai import OpenAI
+
 from config import get_settings
 
 s = get_settings()
