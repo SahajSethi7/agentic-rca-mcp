@@ -33,6 +33,7 @@ from utils import (
 
 logger = logging.getLogger("agentic_rca.api")
 
+
 app = FastAPI(title="RCA Assistant API")
 
 # Phase 6: mount the web UI job/streaming routes on this same app, so the
