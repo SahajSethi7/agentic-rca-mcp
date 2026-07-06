@@ -13,6 +13,7 @@ the shared `RCAAgent` pipeline used by the API, CLI, and MCP server.
 - Persist the internal structured JSON artifact locally.
 - Provide a matching-past-RCA Excel download when memory matches are available.
 - Emit safe structured error events.
+- Enforce Auth0 permissions when `AUTH_ENABLED=true`.
 
 ## Routes
 
@@ -28,6 +29,16 @@ GET  /ui/jobs/{job_id}/runs/{index}/matching-past-rcas.xlsx
 
 The web UI does not expose a downloadable RCA JSON file, although the job runner
 continues to save the structured JSON artifact under `OUTPUT_DIR`.
+
+When Auth0 is enabled, route permissions are:
+
+| Route | Permission |
+| --- | --- |
+| `POST /ui/analyze` | `rca:write` |
+| `GET /ui/meta`, `GET /ui/events/*`, `GET /ui/status/*` | `rca:read` |
+| `GET /ui/jobs/*/report.html` | `rca:read` |
+| `GET /ui/jobs/*/report.pdf` | `rca:download` |
+| `GET /ui/jobs/*/matching-past-rcas.xlsx` | `rca:download` |
 
 ## Files
 

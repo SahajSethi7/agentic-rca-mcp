@@ -186,6 +186,12 @@ def append_audit_record(
     latency_seconds: float | None = None,
     sanitizer_findings: list[str] | None = None,
     error_type: str | None = None,
+    action: str | None = None,
+    artifact_kind: str | None = None,
+    actor_subject: str | None = None,
+    actor_email: str | None = None,
+    actor_name: str | None = None,
+    actor_permissions: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """Append one JSONL audit record; fail-soft (auditing never breaks a run).
 
@@ -207,6 +213,12 @@ def append_audit_record(
         "latency_seconds": latency_seconds,
         "sanitizer_findings": sanitizer_findings or [],
         "error_type": error_type,
+        "action": action,
+        "artifact_kind": artifact_kind,
+        "actor_subject": actor_subject,
+        "actor_email": actor_email,
+        "actor_name": actor_name,
+        "actor_permissions": actor_permissions or [],
     }
     try:
         settings.output_dir.mkdir(parents=True, exist_ok=True)

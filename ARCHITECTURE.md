@@ -326,11 +326,9 @@ host. Model weights are stored in the named `ollama` volume and are pulled after
 the first Compose startup.
 
 The frontend proxies `/ui`, `/rca`, and `/health` to the backend service over
-the Compose network.
-
-Authentication is not currently implemented. A previous API-key-only proposal
-was rejected because it protected only `POST /rca` and did not cover the main
-web job routes.
+the Compose network. Optional Auth0 protection is enabled through environment
+variables; the backend validates API access tokens against the Auth0 JWKS and
+enforces route-level RCA permissions for the API and web job routes.
 
 ## Evaluation And Tests
 
@@ -359,11 +357,12 @@ The system currently:
 - runs deterministic critique and bounded revision
 - provides web UI, API, CLI, and MCP access
 - writes local PDF, HTML, internal JSON, and audit artifacts
+- optionally protects web/API routes with Auth0 OAuth and RBAC permissions
 
 The system does not:
 
 - inspect entire source repositories
 - build repository knowledge graphs at runtime
-- provide multi-user authentication or tenancy
+- provide database-backed multi-tenant account management
 - maintain database-backed job history
 - execute remediation actions

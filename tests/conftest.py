@@ -118,6 +118,12 @@ def stub_provider() -> CapturingStubProvider:
     return CapturingStubProvider()
 
 
+@pytest.fixture(autouse=True)
+def disable_auth_for_tests(monkeypatch) -> None:
+    """Keep local Auth0 .env settings from changing non-auth test behavior."""
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+
+
 @pytest.fixture
 def guarded_settings(tmp_path) -> Settings:
     """Settings with OUTPUT_DIR sandboxed to a temp dir and validation off."""

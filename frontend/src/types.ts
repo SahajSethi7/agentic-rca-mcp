@@ -105,6 +105,14 @@ export interface UiMeta {
     model: string;
   };
   memory?: MemoryMeta;
+  auth?: {
+    enabled: boolean;
+    authenticated: boolean;
+    subject?: string | null;
+    email?: string | null;
+    name?: string | null;
+    permissions: string[];
+  };
 }
 
 export type SSEvent =

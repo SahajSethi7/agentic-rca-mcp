@@ -28,6 +28,7 @@ JSONL audit trail.
   no-answer model responses instead of masking them as generic fallback RCAs.
 - Optional reviewer-model validation with confidence and validation notes.
 - Local PDF, HTML, internal JSON artifacts, and audit logs under `OUTPUT_DIR`.
+- Optional Auth0 OAuth/RBAC protection for the React UI and FastAPI routes.
 - Docker Compose setup with FastAPI, Nginx-served frontend, and Ollama.
 
 ## Architecture
@@ -52,7 +53,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
 ## Prerequisites
 
 - Python 3.12+
-- Node.js 20+ if you want to rebuild or develop the frontend
+- Node.js 20.19+ if you want to rebuild or develop the frontend
 - Docker and Docker Compose if you want the containerized setup
 - Ollama if running local models directly on the host
 
@@ -160,6 +161,73 @@ npm run dev
 The Vite dev server runs on `http://127.0.0.1:5173` and proxies API routes to
 the FastAPI backend on port `8000`.
 
+## Auth0 OAuth And RBAC
+
+Authentication is opt-in. With `AUTH_ENABLED=false`, the app keeps the local
+development behavior used by tests and demos. With Auth0 enabled, FastAPI
+validates RS256 access tokens against your tenant JWKS and enforces RCA
+permissions on backend routes.
+
+In Auth0:
+
+1. Create an API, for example `RCA Assistant API`, with an identifier such as
+   `https://rca-assistant.local/api`. Keep the signing algorithm as `RS256`.
+2. In that API, create permissions:
+   `rca:read`, `rca:write`, `rca:download`, `rca:audit`, `rca:admin`.
+3. Enable RBAC for the API and enable adding permissions to access tokens.
+4. Create a Single Page Application for the React UI.
+5. Add these local URLs to Allowed Callback URLs, Allowed Logout URLs, and
+   Allowed Web Origins as needed:
+
+```text
+http://localhost:5173
+http://127.0.0.1:5173
+http://localhost:8000
+http://127.0.0.1:8000
+```
+
+Example role mapping:
+
+| Role | Permissions |
+| --- | --- |
+| `viewer` | `rca:read` |
+| `analyst` | `rca:read`, `rca:write`, `rca:download` |
+| `auditor` | `rca:read`, `rca:audit`, `rca:download` |
+| `admin` | `rca:admin` plus any explicit permissions you want in Auth0 |
+
+Backend `.env`:
+
+```text
+AUTH_ENABLED=true
+AUTH0_DOMAIN=your-tenant.us.auth0.com
+AUTH0_AUDIENCE=https://rca-assistant.local/api
+AUTH0_ALGORITHMS=RS256
+AUTH_ADMIN_PERMISSION=rca:admin
+```
+
+Frontend `frontend/.env`:
+
+```text
+VITE_AUTH_ENABLED=true
+VITE_AUTH0_DOMAIN=your-tenant.us.auth0.com
+VITE_AUTH0_CLIENT_ID=your-spa-client-id
+VITE_AUTH0_AUDIENCE=https://rca-assistant.local/api
+```
+
+Protected route mapping:
+
+| Capability | Permission |
+| --- | --- |
+| `POST /rca`, `POST /ui/analyze` | `rca:write` |
+| `/ui/meta`, `/ui/status/*`, `/ui/events/*`, HTML report view | `rca:read` |
+| PDF and matching-RCA Excel downloads | `rca:download` |
+| Audit surface in the React UI | `rca:audit` |
+| Settings surface in the React UI | `rca:admin` |
+
+`rca:admin` is treated as an override by the backend permission guard. Audit
+records include the Auth0 subject, email/name claims when present, permissions,
+action, and artifact kind for report access.
+
 ## Docker
 
 Run the full stack with Docker Compose:
@@ -249,6 +317,9 @@ Common environment variables:
 | `RCA_MEMORY_MAX_MATCHES` | Maximum memory matches attached to prompts | `10` locally, `3` in Compose |
 | `RCA_MEMORY_MIN_SCORE` | Minimum similarity score | `0.50` |
 | `RCA_MEMORY_WRITEBACK_ENABLED` | Append completed RCAs to memory workbook | `false` locally, `true` in Compose |
+| `AUTH_ENABLED` | Enable Auth0 access-token enforcement | `false` |
+| `AUTH0_DOMAIN` | Auth0 tenant domain | unset |
+| `AUTH0_AUDIENCE` | Auth0 API identifier / token audience | unset |
 
 ## Testing And Linting
 
@@ -285,11 +356,8 @@ python eval/run_eval.py
 | Provider crash surfacing | 5xx/OOM signatures such as `signal: killed` map to `provider_unreachable`. |
 | No-answer surfacing | Empty/truncated reasoning responses surface as `model_output_invalid`. |
 | Audit log | Each invocation writes a JSONL audit record with hashed problem text. |
+| OAuth/RBAC | Optional Auth0 JWT verification and route-level permission checks. |
 | Evidence handling | Past RCA memory is treated as supporting evidence, not ground truth. |
-
-Authentication is not currently implemented. A proposed API-key-only change was
-not adopted because it protected only `POST /rca` and did not cover the web job
-routes that drive the main UI.
 
 ## Project Structure
 

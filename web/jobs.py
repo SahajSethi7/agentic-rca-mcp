@@ -44,6 +44,14 @@ MAX_RETAINED_JOBS = 40
 AgentFactory = Callable[[Settings], Any]
 
 
+def _actor_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    actor = payload.get("_actor")
+    if not isinstance(actor, dict):
+        return {}
+    keys = ("actor_subject", "actor_email", "actor_name", "actor_permissions")
+    return {key: actor.get(key) for key in keys}
+
+
 @dataclass
 class RunState:
     """One method's analysis inside a job."""
@@ -281,6 +289,8 @@ class JobManager:
                 rounds=stats.get("rounds"),
                 latency_seconds=report.latency_seconds,
                 sanitizer_findings=stats.get("sanitizer_findings"),
+                action="rca.run",
+                **_actor_fields(payload),
             )
 
             base = f"/ui/jobs/{job.id}/runs/{run.index}"
@@ -312,6 +322,8 @@ class JobManager:
                 rounds=stats.get("rounds"),
                 sanitizer_findings=stats.get("sanitizer_findings"),
                 error_type=structured.error_type,
+                action="rca.run",
+                **_actor_fields(payload),
             )
             job.emit(
                 {

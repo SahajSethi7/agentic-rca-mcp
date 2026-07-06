@@ -19,6 +19,7 @@ dependencies = [
   "openpyxl",
   "pandas",
   "pydantic",
+  "PyJWT[crypto]",
   "python-dotenv",
   "pytest",
   "reportlab",

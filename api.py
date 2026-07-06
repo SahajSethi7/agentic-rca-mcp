@@ -15,12 +15,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent.orchestrator import RCAAgent
+from auth import AuthContext, coerce_auth_context, require_permission
 from config import get_settings
 from schemas import RCA_METHODS, RCAInput, RCAReport, StructuredError
 from utils import (
@@ -125,8 +126,12 @@ def health() -> dict[str, str]:
 
 
 @app.post("/rca", response_model=RCAReport)
-def create_rca(payload: RCAInput) -> RCAReport:
+def create_rca(
+    payload: RCAInput,
+    auth: AuthContext = Depends(require_permission("rca:write")),
+) -> RCAReport:
     settings = get_settings()
+    auth = coerce_auth_context(auth)
     agent = RCAAgent(settings=settings)
     try:
         report = agent.run(
@@ -152,6 +157,8 @@ def create_rca(payload: RCAInput) -> RCAReport:
             rounds=stats.get("rounds"),
             sanitizer_findings=stats.get("sanitizer_findings"),
             error_type=structured.error_type,
+            action="rca.run",
+            **auth.audit_fields(),
         )
         raise PipelineError(structured) from exc
 
@@ -169,5 +176,7 @@ def create_rca(payload: RCAInput) -> RCAReport:
         rounds=stats.get("rounds"),
         latency_seconds=report.latency_seconds,
         sanitizer_findings=stats.get("sanitizer_findings"),
+        action="rca.run",
+        **auth.audit_fields(),
     )
     return report

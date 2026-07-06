@@ -17,14 +17,15 @@ import json
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from auth import AuthContext, require_permission
 from config import get_settings
 from memory import get_past_rca_memory_count
 from schemas import RCA_METHODS, RCAMethod
-from utils import utc_now_iso
+from utils import append_audit_record, utc_now_iso
 from web.jobs import STAGES, Job, manager
 
 router = APIRouter()
@@ -49,7 +50,7 @@ def _methods_for(req: AnalyzeRequest) -> list[str]:
 
 
 @router.get("/ui/meta")
-def meta() -> dict:
+def meta(auth: AuthContext = Depends(require_permission("rca:read"))) -> dict:
     """Metadata the front-end uses to build selectors and honest status copy."""
     settings = get_settings()
     memory = {
@@ -78,13 +79,25 @@ def meta() -> dict:
             "model": settings.validation_model or settings.rca_model,
         },
         "memory": memory,
+        "auth": {
+            "enabled": auth.enabled,
+            "authenticated": auth.authenticated,
+            "subject": auth.subject,
+            "email": auth.email,
+            "name": auth.name,
+            "permissions": sorted(auth.permissions),
+        },
     }
 
 
 @router.post("/ui/analyze")
-def analyze(req: AnalyzeRequest) -> JSONResponse:
+def analyze(
+    req: AnalyzeRequest,
+    auth: AuthContext = Depends(require_permission("rca:write")),
+) -> JSONResponse:
     """Start a background job and return its id immediately."""
     payload = req.model_dump()
+    payload["_actor"] = auth.audit_fields()
     job = manager.start(payload, _methods_for(req))
     return JSONResponse(
         {
@@ -100,7 +113,11 @@ def _job_or_404(job_id: str) -> Job | None:
 
 
 @router.get("/ui/events/{job_id}")
-def events(job_id: str, request: Request) -> StreamingResponse:
+def events(
+    job_id: str,
+    request: Request,
+    auth: AuthContext = Depends(require_permission("rca:read")),
+) -> StreamingResponse:
     """Stream stage/result/error/complete events as Server-Sent Events."""
     job = _job_or_404(job_id)
 
@@ -131,7 +148,11 @@ def events(job_id: str, request: Request) -> StreamingResponse:
 
 
 @router.get("/ui/status/{job_id}")
-def status(job_id: str, cursor: int = Query(0, ge=0)) -> JSONResponse:
+def status(
+    job_id: str,
+    cursor: int = Query(0, ge=0),
+    auth: AuthContext = Depends(require_permission("rca:read")),
+) -> JSONResponse:
     """Polling fallback: return events since ``cursor`` plus the done flag."""
     job = _job_or_404(job_id)
     if job is None:
@@ -155,11 +176,39 @@ def _run_artifact(job_id: str, index: int, kind: str):
     return path
 
 
+def _audit_artifact_access(
+    *,
+    job_id: str,
+    index: int,
+    kind: str,
+    auth: AuthContext,
+) -> None:
+    job = _job_or_404(job_id)
+    if job is None or index >= len(job.runs):
+        return
+    run = job.runs[index]
+    append_audit_record(
+        settings=get_settings(),
+        entry_point="web",
+        problem_statement=job.payload.get("problem_statement", ""),
+        method=run.method,
+        success=True,
+        action="artifact.access",
+        artifact_kind=kind,
+        **auth.audit_fields(),
+    )
+
+
 @router.get("/ui/jobs/{job_id}/runs/{index}/report.pdf")
-def download_pdf(job_id: str, index: int):
+def download_pdf(
+    job_id: str,
+    index: int,
+    auth: AuthContext = Depends(require_permission("rca:download")),
+):
     result = _run_artifact(job_id, index, "pdf")
     if isinstance(result, JSONResponse):
         return result
+    _audit_artifact_access(job_id=job_id, index=index, kind="pdf", auth=auth)
     return FileResponse(
         result,
         media_type="application/pdf",
@@ -169,18 +218,28 @@ def download_pdf(job_id: str, index: int):
 
 
 @router.get("/ui/jobs/{job_id}/runs/{index}/report.html", response_class=HTMLResponse)
-def view_html(job_id: str, index: int):
+def view_html(
+    job_id: str,
+    index: int,
+    auth: AuthContext = Depends(require_permission("rca:read")),
+):
     result = _run_artifact(job_id, index, "html")
     if isinstance(result, JSONResponse):
         return result
+    _audit_artifact_access(job_id=job_id, index=index, kind="html", auth=auth)
     return HTMLResponse(Path(result).read_text(encoding="utf-8"))
 
 
 @router.get("/ui/jobs/{job_id}/runs/{index}/matching-past-rcas.xlsx")
-def download_matching_past_rcas(job_id: str, index: int):
+def download_matching_past_rcas(
+    job_id: str,
+    index: int,
+    auth: AuthContext = Depends(require_permission("rca:download")),
+):
     result = _run_artifact(job_id, index, "xlsx")
     if isinstance(result, JSONResponse):
         return result
+    _audit_artifact_access(job_id=job_id, index=index, kind="xlsx", auth=auth)
     return FileResponse(
         result,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

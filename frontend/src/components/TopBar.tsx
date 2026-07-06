@@ -1,4 +1,5 @@
 import type { UiMeta } from "../types";
+import { AUTH_PERMISSIONS, useAppAuth } from "../auth";
 
 function Icon({ name }: { name: "audit" | "settings" }) {
   if (name === "audit") {
@@ -48,9 +49,13 @@ export default function TopBar({
   onAuditLogs: () => void;
   onSettings: () => void;
 }) {
+  const auth = useAppAuth();
   const writer = uiMeta?.models?.writer ?? "checking";
   const validator = uiMeta?.validation?.model ?? uiMeta?.models?.validator ?? "checking";
   const validationEnabled = uiMeta?.validation?.enabled ?? true;
+  const canAudit = !auth.enabled || auth.hasPermission(AUTH_PERMISSIONS.audit);
+  const canAdmin = !auth.enabled || auth.hasPermission(AUTH_PERMISSIONS.admin);
+  const userLabel = auth.user?.name || auth.user?.email || "Signed in";
 
   return (
     <header className="app-topbar sticky top-0 z-30 border-b border-primary-soft bg-white/90 backdrop-blur">
@@ -70,23 +75,41 @@ export default function TopBar({
           <StatusBadge label="Build" value="v1.0.0 local" tone="amber" />
         </div>
         <div className="flex flex-1 items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onAuditLogs}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-ui font-bold text-ink-soft transition hover:border-primary-soft hover:text-primary-selected"
-          >
-            <Icon name="audit" />
-            Audit Logs
-          </button>
-          <button
-            type="button"
-            onClick={onSettings}
-            aria-label="Open settings"
-            title="Settings"
-            className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-lead font-extrabold text-ink-soft transition hover:border-primary-soft hover:text-primary-selected"
-          >
-            <Icon name="settings" />
-          </button>
+          {auth.enabled && (
+            <div className="hidden max-w-[220px] truncate rounded-md border border-primary-soft bg-primary-tint px-3 py-2 text-ui font-extrabold text-primary-selected sm:block">
+              {userLabel}
+            </div>
+          )}
+          {canAudit && (
+            <button
+              type="button"
+              onClick={onAuditLogs}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-ui font-bold text-ink-soft transition hover:border-primary-soft hover:text-primary-selected"
+            >
+              <Icon name="audit" />
+              Audit Logs
+            </button>
+          )}
+          {canAdmin && (
+            <button
+              type="button"
+              onClick={onSettings}
+              aria-label="Open settings"
+              title="Settings"
+              className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-lead font-extrabold text-ink-soft transition hover:border-primary-soft hover:text-primary-selected"
+            >
+              <Icon name="settings" />
+            </button>
+          )}
+          {auth.enabled && (
+            <button
+              type="button"
+              onClick={auth.logout}
+              className="h-9 rounded-md border border-slate-200 bg-white px-3 text-ui font-bold text-ink-soft transition hover:border-primary-soft hover:text-primary-selected"
+            >
+              Sign out
+            </button>
+          )}
         </div>
       </div>
     </header>

@@ -29,6 +29,11 @@ services:
       RCA_MEMORY_MAX_MATCHES: ${RCA_MEMORY_MAX_MATCHES:-3}
       RCA_MEMORY_MIN_SCORE: ${RCA_MEMORY_MIN_SCORE:-0.50}
       RCA_MEMORY_WRITEBACK_ENABLED: ${RCA_MEMORY_WRITEBACK_ENABLED:-true}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-}
+      AUTH0_ALGORITHMS: ${AUTH0_ALGORITHMS:-RS256}
+      AUTH_ADMIN_PERMISSION: ${AUTH_ADMIN_PERMISSION:-rca:admin}
       OUTPUT_DIR: /app/outputs
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
@@ -37,7 +42,13 @@ services:
       - ollama
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_AUTH_ENABLED: ${VITE_AUTH_ENABLED:-false}
+        VITE_AUTH0_DOMAIN: ${VITE_AUTH0_DOMAIN:-}
+        VITE_AUTH0_CLIENT_ID: ${VITE_AUTH0_CLIENT_ID:-}
+        VITE_AUTH0_AUDIENCE: ${VITE_AUTH0_AUDIENCE:-}
     ports:
       - "5173:80"
     depends_on:

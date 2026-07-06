@@ -1,5 +1,24 @@
 import type { AnalyzeResponse, SSEvent, UiMeta } from "./types";
 
+export type AccessTokenGetter = () => Promise<string | null>;
+
+let accessTokenGetter: AccessTokenGetter | null = null;
+
+export function setAccessTokenGetter(getter: AccessTokenGetter | null) {
+  accessTokenGetter = getter;
+}
+
+async function authHeaders(headers: HeadersInit = {}) {
+  const next = new Headers(headers);
+  const token = accessTokenGetter ? await accessTokenGetter() : null;
+  if (token) next.set("Authorization", `Bearer ${token}`);
+  return next;
+}
+
+async function authFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  return fetch(input, { ...init, headers: await authHeaders(init.headers) });
+}
+
 export interface AnalyzePayload {
   problem_statement: string;
   context?: string | null;
@@ -10,7 +29,7 @@ export interface AnalyzePayload {
 }
 
 export async function startAnalyze(payload: AnalyzePayload): Promise<AnalyzeResponse> {
-  const res = await fetch("/ui/analyze", {
+  const res = await authFetch("/ui/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -20,9 +39,40 @@ export async function startAnalyze(payload: AnalyzePayload): Promise<AnalyzeResp
 }
 
 export async function fetchMeta(): Promise<UiMeta> {
-  const res = await fetch("/ui/meta");
+  const res = await authFetch("/ui/meta");
   if (!res.ok) throw new Error(`meta failed: ${res.status}`);
   return res.json();
+}
+
+function filenameFromDisposition(disposition: string | null, fallback: string) {
+  if (!disposition) return fallback;
+  const utf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8?.[1]) return decodeURIComponent(utf8[1].replace(/"/g, ""));
+  const plain = disposition.match(/filename="?([^";]+)"?/i);
+  return plain?.[1] || fallback;
+}
+
+export async function downloadArtifact(href: string, fallbackFilename: string) {
+  const res = await authFetch(href);
+  if (!res.ok) throw new Error(`download failed: ${res.status}`);
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filenameFromDisposition(res.headers.get("content-disposition"), fallbackFilename);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+}
+
+export async function openArtifact(href: string) {
+  const res = await authFetch(href);
+  if (!res.ok) throw new Error(`open failed: ${res.status}`);
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener,noreferrer");
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
 }
 
 // Stream a job's events over SSE, with an automatic polling fallback.
@@ -39,7 +89,7 @@ export function subscribe(
 
   const poll = (cursor: number) => {
     if (closed) return;
-    fetch(`/ui/status/${jobId}?cursor=${cursor}`)
+    authFetch(`/ui/status/${jobId}?cursor=${cursor}`)
       .then((r) => r.json())
       .then((d: { events?: SSEvent[]; cursor?: number; done?: boolean }) => {
         (d.events || []).forEach(onEvent);
@@ -48,6 +98,14 @@ export function subscribe(
       })
       .catch(() => { pollTimer = window.setTimeout(() => poll(cursor), 600); });
   };
+
+  if (accessTokenGetter) {
+    poll(0);
+    return () => {
+      closed = true;
+      if (pollTimer) window.clearTimeout(pollTimer);
+    };
+  }
 
   try {
     es = new EventSource(`/ui/events/${jobId}`);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { AnalyzePayload } from "../api";
+import { downloadArtifact, openArtifact, type AnalyzePayload } from "../api";
 import type { FishboneDetail, KnownIssueMatch, RCAReport, RunUrls } from "../types";
 import { METHOD_SHORT } from "../types";
 import { CheckIcon } from "./icons";
@@ -240,7 +240,21 @@ function KnownIssueMemory({ matches }: { matches: KnownIssueMatch[] }) {
   );
 }
 
-function ExportLink({ href, label, detail, download }: { href?: string; label: string; detail: string; download?: boolean }) {
+function ExportLink({
+  href,
+  label,
+  detail,
+  download,
+  filename,
+}: {
+  href?: string;
+  label: string;
+  detail: string;
+  download?: boolean;
+  filename?: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   if (!href) {
     return (
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 opacity-70">
@@ -250,16 +264,27 @@ function ExportLink({ href, label, detail, download }: { href?: string; label: s
     );
   }
   return (
-    <a
-      href={href}
-      target={download ? undefined : "_blank"}
-      rel={download ? undefined : "noreferrer"}
-      download={download}
-      className="block rounded-lg border border-slate-200 bg-white px-3 py-3 transition hover:border-primary-soft hover:bg-primary-tint"
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          if (download) await downloadArtifact(href, filename || label);
+          else await openArtifact(href);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-primary-soft hover:bg-primary-tint disabled:cursor-wait disabled:opacity-70"
     >
       <p className="text-body-sm font-extrabold text-ink">{label}</p>
-      <p className="mt-1 text-ui text-ink-muted">{detail}</p>
-    </a>
+      <p className="mt-1 text-ui text-ink-muted">{busy ? "Preparing..." : detail}</p>
+      {error && <p className="mt-2 text-ui font-bold text-danger-700">{error}</p>}
+    </button>
   );
 }
 
@@ -476,9 +501,9 @@ export default function Report({
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-card">
           <h2 className="text-lead font-extrabold text-ink">Export & Open</h2>
           <div className="mt-4 space-y-2">
-            <ExportLink href={urls?.pdf_url} label="Download PDF" detail="Printable RCA report" download />
+            <ExportLink href={urls?.pdf_url} label="Download PDF" detail="Printable RCA report" download filename="RCA_Assistant.pdf" />
             <ExportLink href={urls?.html_url} label="Open HTML Report" detail="Human-readable local report" />
-            <ExportLink href={urls?.memory_xlsx_url} label="Download Matching Past RCAs" detail="Excel workbook of retrieved past RCA matches" download />
+            <ExportLink href={urls?.memory_xlsx_url} label="Download Matching Past RCAs" detail="Excel workbook of retrieved past RCA matches" download filename="RCA_Assistant_Matching_Past_RCAs.xlsx" />
           </div>
         </section>
 

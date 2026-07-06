@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import type { ActivityItem, MemoryMeta, Method, RCAReport, RunState, RunUrls, SSEvent, UiMeta } from "./types";
 import { METHOD_SHORT } from "./types";
-import { fetchMeta, startAnalyze, subscribe, type AnalyzePayload } from "./api";
+import { downloadArtifact, fetchMeta, openArtifact, setAccessTokenGetter, startAnalyze, subscribe, type AnalyzePayload } from "./api";
+import { AUTH_PERMISSIONS, useAppAuth, type AppAuthContext } from "./auth";
 import TopBar from "./components/TopBar";
 import AnalysisForm from "./components/AnalysisForm";
 import RunCard from "./components/RunCard";
@@ -32,15 +33,27 @@ const STAGE_TITLE: Record<string, string> = {
   error: "Error",
 };
 
-const NAV: { id: Surface; label: string; icon: ComponentType<{ className?: string }> }[] = [
-  { id: "recent", label: "Recent Runs", icon: DashboardIcon },
-  { id: "new", label: "New Analysis", icon: PlusCircleIcon },
-  { id: "reports", label: "Reports", icon: FileTextIcon },
-  { id: "compare", label: "Compare Methods", icon: CompareIcon },
-  { id: "audit", label: "Audit Logs", icon: ClipboardListIcon },
-  { id: "exports", label: "Exports", icon: DownloadIcon },
-  { id: "settings", label: "Settings", icon: SettingsIcon },
+const NAV: { id: Surface; label: string; icon: ComponentType<{ className?: string }>; permission?: string }[] = [
+  { id: "recent", label: "Recent Runs", icon: DashboardIcon, permission: AUTH_PERMISSIONS.read },
+  { id: "new", label: "New Analysis", icon: PlusCircleIcon, permission: AUTH_PERMISSIONS.write },
+  { id: "reports", label: "Reports", icon: FileTextIcon, permission: AUTH_PERMISSIONS.read },
+  { id: "compare", label: "Compare Methods", icon: CompareIcon, permission: AUTH_PERMISSIONS.read },
+  { id: "audit", label: "Audit Logs", icon: ClipboardListIcon, permission: AUTH_PERMISSIONS.audit },
+  { id: "exports", label: "Exports", icon: DownloadIcon, permission: AUTH_PERMISSIONS.download },
+  { id: "settings", label: "Settings", icon: SettingsIcon, permission: AUTH_PERMISSIONS.admin },
 ];
+
+const SURFACE_PERMISSION: Partial<Record<Surface, string>> = {
+  recent: AUTH_PERMISSIONS.read,
+  new: AUTH_PERMISSIONS.write,
+  reports: AUTH_PERMISSIONS.read,
+  run: AUTH_PERMISSIONS.read,
+  report: AUTH_PERMISSIONS.read,
+  compare: AUTH_PERMISSIONS.read,
+  audit: AUTH_PERMISSIONS.audit,
+  exports: AUTH_PERMISSIONS.download,
+  settings: AUTH_PERMISSIONS.admin,
+};
 
 const RECENT_RUN_LIMIT = 40;
 const RUN_HISTORY_STORAGE_KEY = "rcaAssistant.runHistory.v1";
@@ -157,19 +170,21 @@ function Sidebar({
   memoryLabel,
   memoryEnabled,
   provider,
+  hasPermission,
 }: {
   active: Surface;
   onNavigate: (s: Surface) => void;
   memoryLabel: string;
   memoryEnabled: boolean;
   provider: string;
+  hasPermission: (permission: string) => boolean;
 }) {
   return (
     <aside className="app-sidebar fixed inset-y-0 left-0 z-40 hidden w-[264px] flex-col bg-gradient-to-b from-[#000000] via-[#061a2f] to-[#003b5c] text-white shadow-[18px_0_36px_-34px_rgba(6,26,47,.9)] lg:flex">
       <ShellLogo />
       <div className="mx-5 h-px bg-white/10" />
       <nav className="flex-1 space-y-1 px-3 py-5">
-        {NAV.map((item) => {
+        {NAV.filter((item) => !item.permission || hasPermission(item.permission)).map((item) => {
           const selected = active === item.id || (active === "run" && item.id === "new") || (active === "report" && item.id === "reports");
           const Icon = item.icon;
           return (
@@ -226,11 +241,19 @@ function Sidebar({
   );
 }
 
-function MobileNav({ active, onNavigate }: { active: Surface; onNavigate: (s: Surface) => void }) {
+function MobileNav({
+  active,
+  onNavigate,
+  hasPermission,
+}: {
+  active: Surface;
+  onNavigate: (s: Surface) => void;
+  hasPermission: (permission: string) => boolean;
+}) {
   return (
     <div className="app-mobile-nav sticky top-[64px] z-20 border-b border-slate-200 bg-white px-3 py-2 lg:hidden">
       <div className="flex gap-2 overflow-x-auto report-scroll">
-        {NAV.map((item) => (
+        {NAV.filter((item) => !item.permission || hasPermission(item.permission)).map((item) => (
           <button
             key={item.id}
             type="button"
@@ -268,6 +291,48 @@ function EmptyState({ title, body, action }: { title: string; body: string; acti
       <p className="mx-auto mt-2 max-w-[620px] text-body leading-6 text-ink-muted">{body}</p>
       {action && <div className="mt-4">{action}</div>}
     </section>
+  );
+}
+
+function AuthGate({ auth }: { auth: AppAuthContext }) {
+  const title = auth.error
+    ? "Authentication setup needs attention"
+    : auth.isLoading
+      ? "Checking your session"
+      : "Sign in to RCA Assistant";
+  const body = auth.error
+    ? auth.error
+    : auth.isLoading
+      ? "Validating your Auth0 session and RCA permissions."
+      : "Use your organization login to open the RCA workspace.";
+  return (
+    <div className="grid min-h-screen place-items-center bg-slate-50 px-4">
+      <section className="w-full max-w-[440px] rounded-lg border border-slate-200 bg-white p-6 text-center shadow-hero">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-xl bg-primary text-white">
+          <BrandMark className="h-14 w-14" />
+        </div>
+        <h1 className="mt-5 text-title font-extrabold text-ink">{title}</h1>
+        <p className="mt-2 text-body leading-6 text-ink-muted">{body}</p>
+        {!auth.isLoading && !auth.error && (
+          <button
+            type="button"
+            onClick={() => void auth.login()}
+            className="mt-5 h-11 w-full rounded-md bg-primary px-4 text-body-sm font-extrabold text-white hover:bg-primary-hover"
+          >
+            Continue with Auth0
+          </button>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function PermissionDenied({ permission }: { permission: string }) {
+  return (
+    <EmptyState
+      title="Permission required"
+      body={`Your account is signed in, but this feature requires ${permission}. Ask an Auth0 admin to add the matching role or permission.`}
+    />
   );
 }
 
@@ -395,23 +460,51 @@ function ReportsIndex({
   );
 }
 
-function ExportButton({ href, label, detail, download }: { href?: string; label: string; detail: string; download?: boolean }) {
-  return href ? (
-    <a
-      href={href}
-      target={download ? undefined : "_blank"}
-      rel={download ? undefined : "noreferrer"}
-      download={download}
-      className="rounded-lg border border-slate-200 bg-white p-4 shadow-card transition hover:border-primary-soft hover:bg-primary-tint"
+function ExportButton({
+  href,
+  label,
+  detail,
+  download,
+  filename,
+}: {
+  href?: string;
+  label: string;
+  detail: string;
+  download?: boolean;
+  filename?: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!href) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 opacity-70">
+        <p className="text-body font-extrabold text-ink">{label}</p>
+        <p className="mt-1 text-ui leading-5 text-ink-muted">{detail}</p>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          if (download) await downloadArtifact(href, filename || label);
+          else await openArtifact(href);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className="rounded-lg border border-slate-200 bg-white p-4 text-left shadow-card transition hover:border-primary-soft hover:bg-primary-tint disabled:cursor-wait disabled:opacity-70"
     >
       <p className="text-body font-extrabold text-ink">{label}</p>
-      <p className="mt-1 text-ui leading-5 text-ink-muted">{detail}</p>
-    </a>
-  ) : (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 opacity-70">
-      <p className="text-body font-extrabold text-ink">{label}</p>
-      <p className="mt-1 text-ui leading-5 text-ink-muted">{detail}</p>
-    </div>
+      <p className="mt-1 text-ui leading-5 text-ink-muted">{busy ? "Preparing..." : detail}</p>
+      {error && <p className="mt-2 text-ui font-bold text-danger-700">{error}</p>}
+    </button>
   );
 }
 
@@ -431,9 +524,9 @@ function ExportsView({ runs }: { runs: RunState[] | null }) {
             </div>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <ExportButton href={run.urls?.pdf_url} label="Download PDF" detail="Printable report artifact" download />
+            <ExportButton href={run.urls?.pdf_url} label="Download PDF" detail="Printable report artifact" download filename="RCA_Assistant.pdf" />
             <ExportButton href={run.urls?.html_url} label="Open HTML Report" detail="Standalone local web report" />
-            <ExportButton href={run.urls?.memory_xlsx_url} label="Matching Past RCAs" detail="Excel workbook with threshold-matched records" download />
+            <ExportButton href={run.urls?.memory_xlsx_url} label="Matching Past RCAs" detail="Excel workbook with threshold-matched records" download filename="RCA_Assistant_Matching_Past_RCAs.xlsx" />
           </div>
         </section>
       ))}
@@ -698,6 +791,7 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
 type CompletionToast = { key: string; method: Method; problem?: string };
 
 export default function App() {
+  const auth = useAppAuth();
   const initialRoute = typeof window !== "undefined" ? parseRouteHash() : { surface: "new" as Surface, runKey: null, matched: false };
   const [runs, setRuns] = useState<RunState[] | null>(null);
   const [runHistory, setRunHistory] = useState<RunState[]>(loadStoredRunHistory);
@@ -720,6 +814,11 @@ export default function App() {
   function dismissToast(key: string) {
     setCompletionToasts((prev) => prev.filter((toast) => toast.key !== key));
   }
+
+  useEffect(() => {
+    setAccessTokenGetter(auth.enabled && auth.isAuthenticated ? auth.getAccessToken : null);
+    return () => setAccessTokenGetter(null);
+  }, [auth.enabled, auth.getAccessToken, auth.isAuthenticated]);
 
   useEffect(() => {
     const onHashChange = () => {
@@ -749,6 +848,10 @@ export default function App() {
   }, [runHistory]);
 
   useEffect(() => {
+    if (auth.enabled && (auth.isLoading || !auth.isAuthenticated)) {
+      setUiMeta(null);
+      return;
+    }
     let cancelled = false;
     fetchMeta()
       .then((meta) => {
@@ -809,7 +912,7 @@ export default function App() {
       cancelled = true;
       cleanupRef.current?.();
     };
-  }, []);
+  }, [auth.enabled, auth.isAuthenticated, auth.isLoading]);
 
   useEffect(() => {
     const finished = runs?.filter((run) => run.report || run.error) ?? [];
@@ -979,6 +1082,11 @@ export default function App() {
       navigate("run", key);
     }
 
+    const requiredPermission = SURFACE_PERMISSION[activeSurface];
+    if (auth.enabled && requiredPermission && !auth.hasPermission(requiredPermission)) {
+      return <PermissionDenied permission={requiredPermission} />;
+    }
+
     if (activeSurface === "new") {
       return (
         <AnalysisForm
@@ -1047,11 +1155,18 @@ export default function App() {
     if (activeSurface === "exports") return <ExportsView runs={allRuns} />;
     if (activeSurface === "audit") return <AuditLogsView runs={runs} />;
     return <SettingsView uiMeta={uiMeta} />;
-  }, [activeSurface, allRuns, busy, lastPayload, memoryMeta, runs, selectedReportRun, startedAt, uiMeta, validationEnabled, validatorModel, writerModel]);
+  }, [activeSurface, allRuns, auth, busy, lastPayload, memoryMeta, runs, selectedReportRun, startedAt, uiMeta, validationEnabled, validatorModel, writerModel]);
 
   useEffect(() => {
     document.title = `${DOCUMENT_TITLES[activeSurface]} \u2014 RCA Assistant`;
   }, [activeSurface]);
+
+  if (
+    auth.enabled &&
+    (!auth.configured || auth.isLoading || !auth.isAuthenticated || (auth.error && auth.permissions.length === 0))
+  ) {
+    return <AuthGate auth={auth} />;
+  }
 
   const header = {
     recent: ["Dashboard", "Recent Runs", "Current-session runs and generated RCA artifacts."],
@@ -1073,10 +1188,11 @@ export default function App() {
         memoryLabel={memoryValue}
         memoryEnabled={memoryMeta?.enabled ?? true}
         provider={uiMeta?.provider || "ollama"}
+        hasPermission={auth.hasPermission}
       />
       <div className="lg:pl-[264px]">
         <TopBar uiMeta={uiMeta} onAuditLogs={() => navigate("audit")} onSettings={() => navigate("settings")} />
-        <MobileNav active={activeSurface} onNavigate={navigate} />
+        <MobileNav active={activeSurface} onNavigate={navigate} hasPermission={auth.hasPermission} />
         <main className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6">
           <div key={activeSurface} className="surface-enter">
             {activeSurface !== "new" && <SurfaceHeader eyebrow={header[0]} title={header[1]} body={header[2]} />}

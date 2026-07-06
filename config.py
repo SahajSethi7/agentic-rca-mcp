@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _env_bool(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     provider: str = os.getenv("LLM_PROVIDER", "ollama")
@@ -26,24 +30,38 @@ class Settings:
     request_timeout_seconds: int = int(os.getenv("RCA_REQUEST_TIMEOUT_SECONDS", "120"))
     agent_timeout_seconds: int = int(os.getenv("RCA_AGENT_TIMEOUT_SECONDS", "420"))
     max_revise_rounds: int = int(os.getenv("RCA_MAX_REVISE_ROUNDS", "2"))
-    validation_enabled: bool = os.getenv("RCA_VALIDATION_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+    validation_enabled: bool = _env_bool("RCA_VALIDATION_ENABLED", "true")
     output_dir: Path = Path(os.getenv("OUTPUT_DIR", "./outputs"))
     max_input_chars: int = int(os.getenv("RCA_MAX_INPUT_CHARS", "6000"))
     max_context_chars: int = int(os.getenv("RCA_MAX_CONTEXT_CHARS", "12000"))
-    memory_enabled: bool = os.getenv("RCA_MEMORY_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+    memory_enabled: bool = _env_bool("RCA_MEMORY_ENABLED", "true")
     memory_path: Path = Path(os.getenv("RCA_MEMORY_PATH", "./data/past_rca_memory_sample_repaired.xlsx"))
     memory_max_matches: int = int(os.getenv("RCA_MEMORY_MAX_MATCHES", "10"))
     memory_min_score: float = float(os.getenv("RCA_MEMORY_MIN_SCORE", "0.50"))
     memory_writeback_enabled: bool = (
-        os.getenv("RCA_MEMORY_WRITEBACK_ENABLED", "false").strip().lower()
-        in {"1", "true", "yes", "on"}
+        _env_bool("RCA_MEMORY_WRITEBACK_ENABLED", "false")
     )
     eval_models: tuple[str, ...] = tuple(
         model.strip()
         for model in os.getenv("RCA_EVAL_MODELS", "qwen3:8b,llama3.2:latest").split(",")
         if model.strip()
     )
+    auth_enabled: bool = False
+    auth0_domain: str | None = None
+    auth0_audience: str | None = None
+    auth0_algorithms: tuple[str, ...] = ("RS256",)
+    auth_admin_permission: str = "rca:admin"
 
 
 def get_settings() -> Settings:
-    return Settings()
+    return Settings(
+        auth_enabled=_env_bool("AUTH_ENABLED", "false"),
+        auth0_domain=os.getenv("AUTH0_DOMAIN"),
+        auth0_audience=os.getenv("AUTH0_AUDIENCE"),
+        auth0_algorithms=tuple(
+            algorithm.strip()
+            for algorithm in os.getenv("AUTH0_ALGORITHMS", "RS256").split(",")
+            if algorithm.strip()
+        ),
+        auth_admin_permission=os.getenv("AUTH_ADMIN_PERMISSION", "rca:admin"),
+    )
