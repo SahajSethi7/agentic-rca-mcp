@@ -54,7 +54,7 @@ export interface RCAReport {
   latency_seconds: number | null;
 }
 
-export interface RunUrls { pdf_url: string; html_url: string; json_url: string; memory_xlsx_url?: string; }
+export interface RunUrls { pdf_url: string; html_url: string; memory_xlsx_url?: string; }
 export interface RunError { error_type?: string; message?: string; detail?: string }
 export interface ActivityItem {
   stage: Stage;

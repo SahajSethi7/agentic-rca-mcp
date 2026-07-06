@@ -1,66 +1,68 @@
 # Agentic RCA Architecture
 
-This document describes the architecture that exists in the project today. It
-includes the current read-only Excel past-RCA memory path. The larger future
-Graphify/codebase-aware plan still lives separately in
-`docs/post_demo_graphify_langchain_plan.md`.
+Agentic RCA Assistant is a local-first RCA generation system with a shared
+engine behind four interfaces: React web UI, FastAPI, CLI, and MCP. This
+document describes the current runtime architecture and the boundaries that keep
+the system predictable, auditable, and safe to operate locally.
 
 ## System Overview
 
-Agentic RCA is a local-first root cause analysis pipeline. A user provides an
-incident or operational problem, optionally with context such as logs, timeline,
-severity, and system area. The system sends that input through a bounded RCA
-agent, generates a validated structured report with an open-source or hosted
-OpenAI-compatible model, runs deterministic quality checks, optionally validates
-the report with a reviewer model, and writes report artifacts to disk.
-
-The core design principle is that every entry point uses the same guarded
-pipeline:
+The user provides an incident description and optional supporting context. The
+system sanitizes the input, retrieves similar past incidents from a local Excel
+memory when enabled, asks a configured model to generate a structured RCA, runs
+deterministic quality checks, optionally validates the report with a reviewer
+model, and writes local artifacts.
 
 ```text
-CLI / MCP / FastAPI / Web UI
+Web UI / FastAPI / CLI / MCP
   -> RCAAgent
   -> sanitizer
-  -> optional past RCA memory retrieval
-  -> method prompt
-  -> model provider
+  -> past RCA memory retrieval
+  -> RCA method strategy
+  -> provider abstraction
   -> Pydantic RCAReport
-  -> deterministic critique/revise loop
+  -> critique and bounded revision
   -> optional validation model
-  -> PDF / HTML / JSON artifacts
-  -> audit log
+  -> PDF, HTML, internal JSON, audit log
 ```
 
-## Entry Points
+Every interface uses the same `RCAAgent.run()` path, so sanitization,
+validation, guardrails, and audit logging are centralized.
 
-The project exposes the RCA engine through four surfaces.
+## Runtime Surfaces
 
-### CLI
+### Web UI
 
-`agentic_rca/__main__.py` implements:
+The web app in `frontend/` is built with React, TypeScript, Tailwind, and Vite.
+It provides:
 
-```powershell
-python -m agentic_rca "login API returns 500 after deploy"
-```
+- RCA input form with method, severity, system area, and context controls
+- live stage progress over Server-Sent Events with polling fallback
+- React-rendered RCA report
+- PDF and standalone HTML report links
+- matching past-RCA Excel export when memory matches are available
+- two-method comparison
 
-It parses arguments, calls the shared pipeline in `server.run_rca_pipeline`,
-prints artifact paths and report metadata as JSON, and maps failures to the
-same structured error envelope used by the API and MCP server.
+The web UI does not expose a downloadable RCA JSON file. The backend still
+persists an internal JSON artifact for local output and traceability.
 
-### MCP Server
-
-`server.py` exposes a FastMCP tool:
+The server-side web layer lives in `web/`:
 
 ```text
-generate_rca_report
+POST /ui/analyze
+GET  /ui/events/{job_id}
+GET  /ui/status/{job_id}
+GET  /ui/meta
+GET  /ui/jobs/{job_id}/runs/{index}/report.pdf
+GET  /ui/jobs/{job_id}/runs/{index}/report.html
+GET  /ui/jobs/{job_id}/runs/{index}/matching-past-rcas.xlsx
 ```
 
-The tool accepts the problem statement, context, RCA method, severity, and
-system area. It runs the shared pipeline, writes PDF/JSON/HTML outputs, and
-returns paths plus a short summary. On failure it returns a `StructuredError`
-object instead of leaking a traceback.
+`web/jobs.py` runs analyses in background threads, stores replayable job events,
+streams progress to the browser, and writes per-job artifacts under
+`OUTPUT_DIR/ui/<job_id>/`.
 
-### FastAPI API
+### FastAPI
 
 `api.py` exposes:
 
@@ -70,99 +72,87 @@ POST /rca
 GET  /
 ```
 
-`POST /rca` accepts `RCAInput` and returns `RCAReport`. The API also mounts the
-web UI routes from `web/routes.py` and serves the built React app from
-`frontend/dist` when available.
+`POST /rca` accepts `RCAInput` and returns the structured `RCAReport`. The root
+route serves the built React app from `frontend/dist` when available.
 
-### Web UI
+### CLI
 
-The browser UI is a React + TypeScript + Tailwind app in `frontend/`. The
-server-side web layer lives in `web/`.
+`agentic_rca/__main__.py` provides:
 
-Important routes:
-
-```text
-POST /ui/analyze
-GET  /ui/events/{job_id}
-GET  /ui/status/{job_id}
-GET  /ui/meta
-GET  /ui/jobs/{job_id}/runs/{index}/report.pdf
-GET  /ui/jobs/{job_id}/runs/{index}/report.html
-GET  /ui/jobs/{job_id}/runs/{index}/report.json
+```bash
+python -m agentic_rca "login API returns HTTP 500 after deployment"
 ```
 
-`web/jobs.py` runs analyses in background threads, records replayable stage
-events, streams progress over Server-Sent Events, falls back to polling when
-needed, and writes per-job artifacts under `OUTPUT_DIR/ui/<job_id>/`.
+The CLI calls the shared pipeline and prints report metadata and artifact paths.
 
-## Core Pipeline
+### MCP
 
-The main orchestrator is `agent/orchestrator.py`.
+`server.py` exposes the `generate_rca_report` FastMCP tool. It accepts the same
+core RCA inputs and returns a summary plus local artifact paths.
 
-`RCAAgent.run()` is the single guarded path used by the API, CLI, MCP server,
-and web jobs. Its current stages are:
+## Core Orchestrator
 
-1. Build and validate `RCAInput`.
-2. Sanitize input and redact secrets.
-3. Retrieve similar past incidents from the read-only Excel RCA memory when
-   enabled.
-4. Emit a planning event, including safe substeps for the UI.
-5. Generate an initial `RCAReport` using the configured provider.
-6. Attach retrieved memory matches as `known_issue_matches`.
+`agent/orchestrator.py` contains `RCAAgent`, the bounded RCA workflow:
+
+1. Validate input.
+2. Sanitize text and redact secrets.
+3. Retrieve similar past RCA records when memory is enabled.
+4. Build method-specific prompts.
+5. Generate a schema-validated report through the active provider.
+6. Attach memory matches to `known_issue_matches`.
 7. Run deterministic critique checks.
-8. Revise with the model when critique finds issues.
-9. Stop after a bounded number of revise rounds or a global time budget.
-10. Run a final validation pass when enabled.
-11. Apply hard guardrails such as confidence capping for unresolved blame.
-12. Return a validated `RCAReport`.
+8. Revise with the generation model when critique finds fixable issues.
+9. Stop after configured round and timeout limits.
+10. Run optional reviewer-model validation.
+11. Apply hard guardrails such as low-confidence caps for unresolved blame.
+12. Return the final `RCAReport`.
 
-The agent is intentionally bounded. It does not run arbitrary tools, mutate the
-filesystem, or loop indefinitely.
+The agent does not execute arbitrary tools, perform remediation, or loop
+indefinitely.
 
-## Schemas
+## Data Contracts
 
 `schemas.py` defines the public contracts.
 
-### `RCAInput`
+### RCAInput
 
-Current input fields:
+```text
+problem_statement
+context
+method
+severity
+system_area
+```
 
-- `problem_statement`
-- `context`
-- `method`
-- `severity`
-- `system_area`
-
-The supported RCA methods are:
+Supported methods:
 
 - `five_why`
 - `fishbone`
 - `fault_tree`
 
-### `RCAReport`
+### RCAReport
 
-The model must return a structured report with:
+The generated report includes:
 
-- `problem`
-- `summary`
-- `why_chain`
-- `root_cause`
-- `contributing_factors`
-- `recommendations`
-- `assumptions`
-- `evidence_needed`
-- `known_issue_matches`
-- `validation_notes`
-- `method_detail`
-- `confidence`
-- provider metadata such as model, prompt version, and latency
+- problem and executive summary
+- why chain
+- root cause
+- contributing factors
+- recommendations
+- assumptions
+- evidence needed
+- known issue matches
+- validation notes
+- method-specific detail
+- confidence
+- model, prompt, and latency metadata
 
-Pydantic validation enforces required fields, list bounds, non-blank list
-items, confidence values, and consecutive why-chain indexes.
+Pydantic enforces required fields, list bounds, confidence values, and
+consecutive why-chain indexes.
 
-### `StructuredError`
+### StructuredError
 
-All entry points use a safe error envelope:
+All user-facing surfaces map failures to a stable error envelope:
 
 ```text
 status
@@ -172,64 +162,43 @@ detail
 timestamp
 ```
 
-This keeps clients from seeing stack traces or raw provider payloads.
+This avoids leaking tracebacks or raw provider payloads.
 
 ## RCA Methods
 
-RCA method behavior is isolated under `methods/`.
+Method behavior is isolated under `methods/`.
 
-`methods/base.py` defines the strategy interface used by all methods. Each
-method contributes:
+- `five_why`: linear why-chain analysis
+- `fishbone`: cause categories across People, Process, Tooling, Environment,
+  and Data
+- `fault_tree`: simplified top event with AND/OR causal structure
 
-- prompt construction
-- optional method-specific system guidance
-- optional parsing/enrichment of `method_detail`
-
-The current methods are:
-
-- `five_why`: canonical why-chain analysis
-- `fishbone`: categorized causes across People, Process, Tooling,
-  Environment, and Data
-- `fault_tree`: simplified AND/OR causal outline
-
-Every method still produces the canonical `why_chain` so renderers, eval, and
-validation can work uniformly.
+Every method still produces the canonical `why_chain`, so renderers,
+validation, and evaluation can treat reports uniformly.
 
 ## Prompting
 
-`prompts.py` contains versioned prompts.
+`prompts.py` contains versioned prompt templates. The current default prompt
+version is `v3`, with:
 
-The current default is `v3`. It adds:
-
-- method-aware system hints
+- method-specific guidance
 - blameless RCA rules
-- no symptom-as-root-cause rule
-- strict why-chain deepening guidance
+- symptom-as-cause prevention
+- why-chain deepening requirements
 - assumptions and evidence-needed requirements
-- revise prompts fed by deterministic critique findings
-- validation prompts for a reviewer model
+- revise prompts driven by critique findings
+- reviewer validation prompts
 
-Older prompt versions remain in the file for reproducibility.
+## Providers And Models
 
-## Model Providers
+The provider layer in `providers/` supports OpenAI-compatible structured output.
 
-The provider abstraction lives in `providers/`.
+- `OllamaProvider`: local Ollama endpoint
+- `HostedProvider`: hosted OpenAI-compatible endpoint
 
-`providers/base.py` defines `RCAProvider`, with two main capabilities:
+Both providers use `instructor` with Pydantic validation.
 
-- `generate(...) -> RCAReport`
-- `create_structured(...) -> Pydantic model`
-
-Current providers:
-
-- `OllamaProvider`: local Ollama via OpenAI-compatible API
-- `HostedProvider`: hosted OpenAI-compatible endpoints such as Groq,
-  Together, or OpenRouter-style services
-
-Both providers use `instructor` to request and validate structured Pydantic
-outputs.
-
-The active provider and models are configured through environment variables:
+Primary model variables:
 
 ```text
 LLM_PROVIDER
@@ -241,236 +210,138 @@ HOSTED_OPEN_MODEL
 VALIDATION_MODEL
 ```
 
-The default local generation model is `qwen3.5:9b`. The default validation
-model in Docker is `llama3.2:latest`. `qwen3.5:4b` is installed as a faster
-fallback option for constrained demo runs.
+Recommended local models:
+
+- `qwen3.5:9b` for RCA generation
+- `qwen3.5:4b` as a lower-latency fallback
+- `llama3.2:latest` for validation and evaluation
 
 ## Past RCA Memory
 
-`memory.py` implements the current read-only memory layer.
-
-The configured workbook is:
+`memory.py` implements the Excel-backed memory layer. The default workbook is:
 
 ```text
 data/past_rca_memory_sample_repaired.xlsx
 ```
 
-The expected sheet is `Past RCA Memory`, with columns such as:
+The expected sheet is `Past RCA Memory`. Records include incident IDs, system
+area, service, symptoms, root cause, fixes, evidence checked, tags, confidence,
+and status.
 
-- `incident_id`
-- `date`
-- `system_area`
-- `service_name`
-- `error_signature`
-- `problem_statement`
-- `symptoms`
-- `root_cause`
-- `immediate_fix`
-- `long_term_fix`
-- `evidence_checked`
-- `owner_team`
-- `tags`
-- `confidence`
-- `status`
-
-The retrieval path is intentionally local and bounded:
+Memory retrieval is local and bounded:
 
 ```text
 RCAInput
-  -> load Excel memory
-  -> rank similar incidents
+  -> load workbook
+  -> score similar incidents
   -> build compact evidence pack
-  -> append evidence pack to prompt context
+  -> add evidence to prompt context
   -> attach matches to RCAReport.known_issue_matches
 ```
 
-If `langchain-core` and `langgraph` are installed, the same load/rank/build
-steps run inside a small LangGraph workflow. If they are unavailable, the
-system uses the deterministic Python scorer directly. Either way, the workbook
-is read-only during RCA generation.
+If `langchain-core` and `langgraph` are installed, the same retrieval steps can
+run inside a small LangGraph workflow. Otherwise, the deterministic local scorer
+is used directly.
 
-Memory records are treated as supporting evidence, not ground truth. The model
-is instructed not to blindly copy a past fix, and the UI/report artifacts show
-match score, match reason, known root cause, immediate fix, and evidence
-checked so reviewers can judge similarity.
+Memory is treated as evidence, not truth. The report surfaces match scores,
+match reasons, known root causes, fixes, and evidence checked so reviewers can
+decide whether a past incident is truly relevant.
 
-## Quality Layer
+## Quality And Validation
 
-The quality layer has two parts: deterministic checks and optional model
-validation.
-
-### Deterministic Critique
-
-`agent/tools.py` contains pure-Python checks for:
+`agent/tools.py` contains deterministic checks for:
 
 - non-deepening why chains
-- root causes that restate the symptom
-- root causes that are too generic to drive action
-- blame language aimed at individuals
-- Fishbone and Fault Tree method consistency
+- root causes that restate symptoms
+- overly generic root causes
+- individual-blame language
+- Fishbone and Fault Tree consistency
 
-These checks are cheap, reproducible, and do not require a model call.
+When checks find issues, the orchestrator can ask the generation model to revise
+within configured limits:
 
-### Revise Loop
+```text
+RCA_MAX_REVISE_ROUNDS
+RCA_AGENT_TIMEOUT_SECONDS
+```
 
-When critique finds issues, `RCAAgent` sends the current report and findings to
-the generation model using `build_revise_messages`. The loop is bounded by:
-
-- `RCA_MAX_REVISE_ROUNDS`
-- `RCA_AGENT_TIMEOUT_SECONDS`
-
-If revision fails, the pipeline keeps the last valid report and records a
-validation note.
-
-### Validation Pass
-
-`validation.py` optionally sends the final report to a reviewer model. The
-reviewer returns a `ValidationVerdict` with final confidence and notes. If
-validation fails, the report is kept and the failure is recorded as a note.
+`validation.py` can run a reviewer-model pass that returns final confidence and
+validation notes. Validation failures are fail-soft: the report is kept and the
+issue is recorded.
 
 ## Guardrails
 
-The project has several runtime guardrails.
-
-### Input Sanitization
-
-`sanitizer.py` runs inside `RCAAgent.run()` before prompt construction. It:
-
-- redacts common secrets
-- enforces per-field length limits
-- strips forged sentinel delimiters
-- fences user-provided text as untrusted incident data
-- records sanitizer findings in report notes and audit records
-
-Because this happens inside the orchestrator, all entry points inherit it.
-
-### Structured Errors
-
-`utils.classify_exception()` maps failures to stable error types such as:
-
-- `invalid_input`
-- `provider_unreachable`
-- `provider_auth`
-- `provider_timeout`
-- `model_output_invalid`
-- `write_denied`
-- `internal_error`
-
-FastAPI maps these to HTTP status codes, while CLI and MCP return JSON.
-
-### Restricted Writes
-
-`utils.enforce_output_path()` ensures report artifacts are only written under
-`OUTPUT_DIR`.
-
-### Audit Log
-
-`utils.append_audit_record()` writes one JSONL record per invocation to:
-
-```text
-OUTPUT_DIR/audit_log.jsonl
-```
-
-The log stores a hash of the problem statement rather than raw incident text.
-It includes method, models, success/failure, confidence, rounds, latency, and
-sanitizer findings.
+| Area | Implementation |
+| --- | --- |
+| Input sanitization | `sanitizer.py` redacts secrets, applies length limits, strips forged sentinels, and fences user text as data. |
+| Structured output | Providers validate model responses as Pydantic objects. |
+| Bounded revisions | Revision rounds and total agent runtime are capped. |
+| Anti-blame handling | Reports with unresolved individual blame are capped to low confidence. |
+| Restricted writes | `utils.enforce_output_path()` keeps artifacts inside `OUTPUT_DIR`. |
+| Structured errors | `utils.classify_exception()` maps failures to safe error envelopes. |
+| Audit trail | `utils.append_audit_record()` writes JSONL records with hashed problem text and run metadata. |
 
 ## Artifacts
 
-The pipeline writes three report artifacts:
+The engine writes local artifacts under `OUTPUT_DIR`:
 
-- `Agentic_RCA.json`
-- `Agentic_RCA.pdf`
-- `Agentic_RCA.html`
+- PDF report
+- standalone HTML report
+- internal JSON report artifact
+- audit log
+- matching past-RCA workbook for web jobs when memory matches exist
 
-`pdf_generator.py` renders the PDF with ReportLab.
+`pdf_generator.py` uses ReportLab. `html_generator.py` creates a standalone
+HTML report. The React UI renders from the full `RCAReport` payload returned by
+the web job event.
 
-`html_generator.py` renders a standalone HTML report. It includes the same core
-sections as the PDF and can include a Mermaid why-chain diagram.
-
-The React UI renders reports from the full `RCAReport` JSON, while the saved
-HTML artifact remains available for standalone viewing.
-
-When past RCA memory matches exist, React, HTML, PDF, and JSON all surface the
-same known-issue evidence through `known_issue_matches`.
-
-## Evaluation And Tests
-
-The eval harness lives in `eval/`.
-
-Current pieces:
-
-- `golden_set.jsonl`: reusable incident prompts
-- `run_eval.py`: model x incident scoring harness
-- `judge.py`: placeholder for future LLM-as-judge benchmarking
-- `rubric.md`: scoring guidance
-
-The test suite covers:
-
-- schemas
-- sanitizer behavior
-- guardrails and structured errors
-- orchestrator behavior
-- deterministic critique tools
-- entry points
-- HTML generation
-- web UI job routes
-
-CI runs lint, tests, and Docker build through `.github/workflows/ci.yml`.
-
-## Runtime And Deployment
-
-The app can run directly on the host or through Docker Compose.
-
-### Local Host
-
-Typical local run:
-
-```powershell
-uvicorn api:app --reload
-```
-
-The API expects an Ollama-compatible endpoint at `OLLAMA_BASE_URL` unless a
-hosted provider is configured.
-
-### Docker Compose
+## Docker Deployment
 
 `docker-compose.yml` starts:
 
-- `app`: FastAPI service
-- `ollama`: local model server
+- `app`: FastAPI backend on port `8000`
+- `frontend`: Nginx-served Vite build on port `5173`
+- `ollama`: local model server on port `11434`
 
-The app container writes artifacts to `/app/outputs`, mounted from host
-`./outputs`.
+The backend writes artifacts to `/app/outputs`, mounted to `./outputs` on the
+host. Model weights are stored in the named `ollama` volume and are pulled after
+the first Compose startup.
 
-Model weights are not baked into the image. They are pulled into the Ollama
-volume separately.
+The frontend proxies `/ui`, `/rca`, and `/health` to the backend service over
+the Compose network.
 
-## Current Boundaries
+## Evaluation And Tests
 
-The system is intentionally local-first and bounded.
+The eval harness lives in `eval/`:
 
-What it does today:
+- `golden_set.jsonl`
+- `run_eval.py`
+- `judge.py`
+- `rubric.md`
+
+The test suite covers schemas, sanitization, guardrails, orchestrator behavior,
+providers, critique tools, entry points, HTML generation, and web UI routes.
+
+CI runs linting, tests, and Docker image build checks.
+
+## System Boundaries
+
+The system currently:
 
 - generates structured RCA reports
 - supports three RCA methods
-- retrieves similar past RCA records from a read-only Excel workbook
-- can use a small LangGraph workflow for memory retrieval when installed
-- uses local or hosted OpenAI-compatible model providers
-- validates model output with Pydantic
+- retrieves similar records from a local Excel memory
+- optionally writes generated RCAs back to the memory workbook
+- uses local or hosted OpenAI-compatible models
+- validates output with Pydantic
 - runs deterministic critique and bounded revision
-- optionally validates with a reviewer model
-- provides CLI, MCP, API, and web UI access
-- writes PDF, HTML, and JSON artifacts
-- maintains a safe audit trail
+- provides web UI, API, CLI, and MCP access
+- writes local PDF, HTML, internal JSON, and audit artifacts
 
-What it does not do yet:
+The system does not:
 
-- index or understand entire source repositories
-- use Graphify or repository knowledge graphs in the runtime path
-- use LangGraph as the durable end-to-end RCA workflow executor
-- maintain durable database-backed job history
-- perform multi-user authentication or tenancy
-- execute autonomous remediation actions
-
-Those are future post-demo directions, not part of the current architecture.
+- inspect entire source repositories
+- build repository knowledge graphs at runtime
+- provide multi-user authentication or tenancy
+- maintain database-backed job history
+- execute remediation actions

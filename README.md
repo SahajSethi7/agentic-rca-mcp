@@ -1,236 +1,304 @@
-# Agentic RCA MCP Server
+# Agentic RCA Assistant
 
-![CI](https://github.com/OWNER/agentic-rca-mcp/actions/workflows/ci.yml/badge.svg)
+Agentic RCA Assistant is a local-first root cause analysis application. It takes
+an incident description, optional context, severity, and system area, then
+generates a structured RCA report through a bounded agent workflow. The same
+engine is available through a React web UI, FastAPI, CLI, and MCP server.
 
-Open-source local-model prototype for generating Root Cause Analysis reports through a provider abstraction, with validated JSON output and PDF generation.
+The project is designed for auditable RCA drafting, not autonomous remediation.
+It validates model output with Pydantic, runs deterministic quality checks,
+keeps model activity bounded, writes local report artifacts, and records a safe
+JSONL audit trail.
 
-## Current Status
+## Features
 
-Demo upgrade complete. The current local demo path now uses `qwen3.5:9b` as
-the main RCA writer, keeps `qwen3.5:4b` available as the faster fallback, and
-keeps `llama3.2:latest` as the validation/eval model. The RCA pipeline now also
-loads a repaired 512-row Excel memory workbook from
-`data/past_rca_memory_sample_repaired.xlsx`, retrieves similar past incidents
-before generation, injects those matches as supporting evidence, and surfaces
-them in the React UI plus the PDF/HTML/JSON artifacts. LangGraph/LangChain are
-installed for the memory retrieval workflow when available; the system falls
-back to deterministic local Excel scoring if those packages are absent.
+- React + TypeScript + Tailwind web UI with live stage progress, report review,
+  method comparison, and export links for PDF, standalone HTML, and matching
+  past-RCA Excel records.
+- Shared RCA engine for the web UI, FastAPI API, CLI, and MCP server.
+- Three RCA methods: 5 Whys, Fishbone, and simplified Fault Tree.
+- OpenAI-compatible provider abstraction for local Ollama or hosted endpoints.
+- Default local model configuration using `qwen3.5:9b` for generation,
+  `qwen3.5:4b` as a faster fallback option, and `llama3.2:latest` for
+  validation or evaluation.
+- Excel-backed past RCA memory with local similarity retrieval and optional
+  write-back.
+- Deterministic critique checks for shallow why chains, symptom-as-cause
+  issues, vague root causes, blame language, and method consistency.
+- Optional reviewer-model validation with confidence and validation notes.
+- Local PDF, HTML, internal JSON artifacts, and audit logs under `OUTPUT_DIR`.
+- Docker Compose setup with FastAPI, Nginx-served frontend, and Ollama.
 
-Phase 6 web UI + HTML report (ambitious edition, Days 36-38). The pipeline now
-has a fourth entry point: a React (TypeScript + Tailwind, Vite) web UI over the
-FastAPI service with a live agent-stage status line, the RCA rendered as React
-components, a Download-PDF button, and a two-method comparison. Every validated RCA is also saved as a styled
-`Agentic_RCA.html` (with an optional Mermaid 5-Why tree) beside the PDF/JSON.
+## Architecture
 
-Phase 5 guardrails + containerisation complete (ambitious edition). The
-pipeline is agentic, multi-method, hardened against bad input/output/missing
-dependencies, and runs in Docker with CI.
+All entry points use the same guarded workflow:
 
-- Sanitizer (`sanitizer.py`): secret redaction, per-field length limits, and
-  prompt-injection delimiting run inside `RCAAgent.run`, so MCP, CLI, and API
-  all pass through it before any prompt is built.
-- Structured errors: every failure (Ollama down, hosted 401, timeout,
-  malformed model output, invalid input) maps to a `StructuredError`
-  envelope - clients never see a stack trace.
-- Restricted writes: `OUTPUT_DIR` is the only writable artifact path,
-  enforced by `utils.enforce_output_path`.
-- Audit log: every invocation (success or failure) appends one JSONL line to
-  `outputs/audit_log.jsonl` with problem hash, method, models, confidence,
-  loop rounds, and sanitizer findings.
-- Docker: `docker compose up` runs the FastAPI service next to an Ollama
-  container; PDFs land on the mounted `./outputs` volume.
-- CI: ruff lint + pytest + a container build on every push.
+```text
+Web UI / FastAPI / CLI / MCP
+  -> RCAAgent
+  -> input sanitizer
+  -> optional past RCA memory retrieval
+  -> method-specific prompt
+  -> model provider
+  -> schema-validated RCAReport
+  -> deterministic critique and bounded revision
+  -> optional validation model
+  -> local artifacts and audit log
+```
 
-Phase 4 quality layer (tagged `quality-layer-complete`). The pipeline is
-agentic and multi-method, reachable from three entry points over a fully open
-stack.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
 
-- Agent loop live: deterministic internal tools (deepening-verifier,
-  symptom-vs-cause checker, anti-blame checker) drive a bounded
-  critique->revise cycle (max 2 rounds, global time budget, deterministic
-  fallback to the last valid report).
-- Validation pass: `validation.py` sends the finished RCA to a reviewer model
-  (`VALIDATION_MODEL`, hosted-open if configured) which sets confidence and
-  appends validation notes. Fails soft.
-- Three methods behind one interface: `five_why` (default), `fishbone`,
-  `fault_tree`, selectable via `method` from MCP, CLI, and API.
-- Prompts v3: per-method system prompts, explicit anti-blame and
-  no-symptom-as-root-cause rules, assumptions/evidence_needed population.
-- Optional input fields `severity` and `system_area` flow through every entry
-  point into every method's prompt.
-- PDF/HTML render every method plus the quality fields (assumptions, evidence
-  needed, confidence chip, validation notes).
+## Prerequisites
 
-Phase 3 MVP spine (tagged `mvp`):
+- Python 3.12+
+- Node.js 20+ if you want to rebuild or develop the frontend
+- Docker and Docker Compose if you want the containerized setup
+- Ollama if running local models directly on the host
 
-- `server.py`: FastMCP server exposing `generate_rca_report` (problem -> agent -> open model -> validated JSON -> PDF on disk).
-- `agent/orchestrator.py`: bounded plan/generate/critique/revise orchestrator seam (critique/revise are no-ops until Phase 4).
-- `pdf_generator.py`: ReportLab Platypus report with section dividers, 5-Why table, footer page numbers, and an AI disclaimer.
-- `api.py`: FastAPI service with `POST /rca` and `GET /health` calling the same orchestrator.
-- `agentic_rca/`: CLI package so `python -m agentic_rca "problem"` runs the pipeline.
-- `.vscode/mcp.json`: VS Code MCP wiring pointing at `server.py` with the venv interpreter and `.env`.
-- Phase 1-2 core preserved: schemas, providers (Ollama + hosted-open), versioned prompts, eval runner, golden set.
+## Local Installation
 
-## Setup
+Clone the repository and install Python dependencies from the project root:
 
-Use PowerShell from the repo root:
+```bash
+git clone <repository-url>
+cd agentic-rca-mcp
+python -m venv .venv
+```
 
-```powershell
-cd "E:\Tech Mahindra\agentic-rca-mcp"
-.\venv\Scripts\activate
+Activate the virtual environment:
+
+```bash
+# macOS/Linux
+source .venv/bin/activate
+
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+```
+
+Install dependencies:
+
+```bash
 pip install -r requirements.txt
 ```
 
-Install Ollama separately, then pull the local models:
+Install and start Ollama, then pull the recommended local models:
 
-```powershell
+```bash
 ollama pull qwen3.5:9b
 ollama pull qwen3.5:4b
 ollama pull llama3.2:latest
 ```
 
-The local `.env` uses:
+Create a `.env` file if you want to override defaults:
 
 ```text
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434/v1
 RCA_MODEL=qwen3.5:9b
 RCA_PROMPT_VERSION=v3
+RCA_VALIDATION_ENABLED=true
 VALIDATION_MODEL=llama3.2:latest
 RCA_MEMORY_ENABLED=true
 RCA_MEMORY_PATH=./data/past_rca_memory_sample_repaired.xlsx
 RCA_MEMORY_MAX_MATCHES=3
-RCA_MEMORY_MIN_SCORE=0.18
+RCA_MEMORY_MIN_SCORE=0.50
+RCA_MEMORY_WRITEBACK_ENABLED=false
+OUTPUT_DIR=./outputs
 ```
 
-## Run The MCP Server
-
-```powershell
-python server.py
-```
-
-Or let VS Code launch it through `.vscode/mcp.json` and invoke the
-`generate_rca_report` tool from chat. Outputs land in `outputs/Agentic_RCA.pdf`
-and `outputs/Agentic_RCA.json`.
-
-## Run The CLI
-
-```powershell
-python -m agentic_rca "checkout requests time out after a database migration"
-python -m agentic_rca "invoice jobs stopped after scheduler change" --method fishbone --severity high --system-area billing
-```
-
-The Phase 4 sample files in `examples/` were regenerated from live Ollama CLI
-runs with the configured Qwen generation model and validated by `llama3.2:latest`.
-
-## Run The FastAPI Service
-
-```powershell
-uvicorn api:app --reload
-curl -X POST http://127.0.0.1:8000/rca -H "Content-Type: application/json" -d '{"problem_statement": "login API returns 500 after deploy"}'
-```
-
-## Run The Web UI
-
-The web UI is a React + TypeScript + Tailwind app (`frontend/`), built with Vite,
-that talks to the FastAPI service. A production build ships in `frontend/dist`,
-so the simplest path is just to run the API and open the browser:
-
-```powershell
-uvicorn api:app --reload
-# then open http://127.0.0.1:8000/
-```
-
-To develop or rebuild the UI:
-
-```powershell
-cd frontend
-npm install
-npm run build   # production build, served by FastAPI at /
-npm run dev     # hot-reload dev server on :5173 (proxies /ui, /rca, /health to :8000)
-```
-
-The app provides a problem form with method/severity selectors, a live
-agent-stage status line (planning -> generating -> critiquing -> revising ->
-validating) streamed over SSE with a polling fallback, the finished RCA rendered
-as React components, a Download-PDF button, and a compare-two-methods toggle that
-runs the same problem through two methods side by side. Each stage can show
-substeps such as memory retrieval, model generation, deterministic critique,
-artifact rendering, and output files. When Excel memory finds similar incidents,
-the report shows a "Past RCA Memory" section with incident IDs, match scores,
-known root causes, fixes, and evidence checked. See
-`docs/web_ui_guide.md` for a full walkthrough. The UI shares the Phase 5
-guardrails - sanitization, structured errors, and the audit log all live in the
-pipeline (`web/jobs.py` runs each analysis through `RCAAgent`), so the web
-surface cannot bypass them.
-
-## Run The Core Engine
-
-```powershell
-python -c "from rca_agent import generate_rca; print(generate_rca('login API returns 500 after deploy').model_dump_json(indent=2))"
-```
-
-## Run Eval
-
-```powershell
-python eval\run_eval.py
-```
-
-This writes:
+For a hosted OpenAI-compatible provider, set:
 
 ```text
-eval/results.md
-eval/results.json
+LLM_PROVIDER=hosted
+HOSTED_OPEN_BASE_URL=https://your-provider.example/v1
+HOSTED_OPEN_API_KEY=your_api_key
+HOSTED_OPEN_MODEL=your_model_name
 ```
 
-## Run Tests
+## Run Locally
 
-```powershell
-pytest
+Start the FastAPI service:
+
+```bash
+uvicorn api:app --reload
 ```
 
-Lint with:
+Open the web UI:
 
-```powershell
-ruff check .
+```text
+http://127.0.0.1:8000/
 ```
 
-## Run In Docker
+The API is available at:
 
-```powershell
-docker compose up --build -d
+```text
+GET  /health
+POST /rca
+```
+
+Example API request:
+
+```bash
+curl -X POST http://127.0.0.1:8000/rca \
+  -H "Content-Type: application/json" \
+  -d '{"problem_statement":"Login API returns HTTP 500 after deployment","method":"five_why"}'
+```
+
+## Frontend Development
+
+The production web bundle is served from `frontend/dist`. To rebuild or run the
+frontend in development mode:
+
+```bash
+cd frontend
+npm install
+npm run build
+npm run dev
+```
+
+The Vite dev server runs on `http://127.0.0.1:5173` and proxies API routes to
+the FastAPI backend on port `8000`.
+
+## Docker
+
+Run the full stack with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+Services:
+
+- Frontend: `http://localhost:5173`
+- FastAPI backend: `http://localhost:8000`
+- Ollama: `http://localhost:11434`
+
+Pull models into the Ollama container on first use:
+
+```bash
 docker compose exec ollama ollama pull qwen3.5:9b
 docker compose exec ollama ollama pull qwen3.5:4b
 docker compose exec ollama ollama pull llama3.2:latest
-# API: http://localhost:8000/rca
-# CLI inside the container; the PDF lands in ./outputs on the host:
-docker compose run --rm app python -m agentic_rca "checkout requests time out after a database migration"
 ```
 
-The compose file passes `HOSTED_OPEN_BASE_URL` / `HOSTED_OPEN_API_KEY` /
-`HOSTED_OPEN_MODEL` through from the host shell (or a local `.env`), so the
-hosted-open path works in the container without editing the file.
+Generated artifacts are written to `./outputs` on the host through the mounted
+volume. The frontend container serves the built Vite app through Nginx and
+proxies `/ui`, `/rca`, and `/health` to the backend service.
 
-## Security & Guardrails
+Run the CLI inside the backend container:
 
-Each guardrail maps to a recognized risk category (OWASP Top 10 for LLM
-Applications / NIST AI RMF):
+```bash
+docker compose run --rm app python -m agentic_rca "Checkout requests time out after a database migration"
+```
 
-| Guardrail | Where | Concept |
+Run tests inside the backend container:
+
+```bash
+docker compose run --rm app python -m pytest
+```
+
+## CLI
+
+Run a single RCA from the command line:
+
+```bash
+python -m agentic_rca "Checkout requests time out after a database migration"
+python -m agentic_rca "Invoice jobs stopped after scheduler change" --method fishbone --severity high --system-area billing
+```
+
+## MCP Server
+
+Start the MCP server:
+
+```bash
+python server.py
+```
+
+The server exposes the `generate_rca_report` tool. It accepts the problem
+statement, optional context, method, severity, and system area, then returns a
+summary and local artifact paths.
+
+## Outputs
+
+The pipeline writes artifacts under `OUTPUT_DIR`:
+
+- PDF report
+- Standalone HTML report
+- Internal structured JSON artifact
+- Matching past-RCA Excel workbook for web runs when memory matches are present
+- `audit_log.jsonl`
+
+The web UI renders from the validated `RCAReport` payload while keeping the
+structured JSON artifact as an internal local output.
+
+## Configuration
+
+Common environment variables:
+
+| Variable | Purpose | Default |
 | --- | --- | --- |
-| Prompt-injection delimiting: untrusted fields fenced as data; forged delimiters stripped | `sanitizer.py`, `methods/base.py` | OWASP LLM01 Prompt Injection |
-| Secret redaction before any model call or disk write | `sanitizer.py` | OWASP LLM06 Sensitive Information Disclosure |
-| Length limits on every input field | `sanitizer.py` | OWASP LLM10 Unbounded Consumption / DoS |
-| Strict schema validation of model output, bounded retries, then a structured error | providers + `schemas.py` + `utils.py` | OWASP LLM05 Improper Output Handling |
-| Anti-blame cap: unresolved blame language forces confidence to `low` | `agent/orchestrator.py` | OWASP LLM09 Misinformation / NIST AI RMF Safe |
-| Restricted file writes: only `OUTPUT_DIR` is writable | `utils.enforce_output_path` | OWASP LLM08 Excessive Agency (least privilege) |
-| JSONL audit log of every invocation (hash, models, rounds, outcome) | `utils.append_audit_record` | NIST AI RMF Govern/Map (accountability, traceability) |
-| Clean structured errors, no stack traces or raw provider payloads to clients | `utils.classify_exception` | OWASP API security: no internal detail leakage |
-| Bounded agent loop (max rounds + global time budget + deterministic fallback) | `agent/orchestrator.py` | OWASP LLM08 Excessive Agency |
-| Read-only past RCA memory: previous incidents are evidence, not automatic truth | `memory.py`, `agent/orchestrator.py` | NIST AI RMF Map/Measure (traceability, uncertainty) |
+| `LLM_PROVIDER` | `ollama` or `hosted` | `ollama` |
+| `OLLAMA_BASE_URL` | Local Ollama OpenAI-compatible endpoint | `http://localhost:11434/v1` |
+| `RCA_MODEL` | Generation model | `qwen3.5:9b` |
+| `VALIDATION_MODEL` | Optional reviewer model | unset locally, `llama3.2:latest` in Compose |
+| `RCA_VALIDATION_ENABLED` | Enable reviewer validation | `true` |
+| `OUTPUT_DIR` | Artifact and audit output directory | `./outputs` |
+| `RCA_MEMORY_ENABLED` | Enable Excel memory retrieval | `true` |
+| `RCA_MEMORY_PATH` | Past RCA workbook path | `./data/past_rca_memory_sample_repaired.xlsx` |
+| `RCA_MEMORY_MAX_MATCHES` | Maximum memory matches attached to prompts | `10` locally, `3` in Compose |
+| `RCA_MEMORY_MIN_SCORE` | Minimum similarity score | `0.50` |
+| `RCA_MEMORY_WRITEBACK_ENABLED` | Append completed RCAs to memory workbook | `false` locally, `true` in Compose |
 
-## Notes
+## Testing And Linting
 
-`qwen3.5:9b` is the current local generation default. `qwen3.5:4b` is installed
-as the lower-latency fallback for constrained demo runs. `llama3.2:latest`
-remains useful as the validation model and eval comparison model.
+Run tests:
+
+```bash
+pytest
+```
+
+Run lint:
+
+```bash
+ruff check .
+```
+
+Run the evaluation harness:
+
+```bash
+python eval/run_eval.py
+```
+
+## Security And Guardrails
+
+| Guardrail | Implementation |
+| --- | --- |
+| Prompt-injection fencing | User fields are sanitized and wrapped as incident data before prompts are built. |
+| Secret redaction | Common secret-like values are redacted before model calls and report writes. |
+| Input length limits | Problem and context fields are bounded by configuration. |
+| Strict output schema | Model responses must validate as Pydantic objects. |
+| Bounded agent loop | Critique and revision rounds are capped by count and timeout. |
+| Anti-blame cap | Unresolved blame language forces low confidence. |
+| Restricted writes | Artifacts must remain inside `OUTPUT_DIR`. |
+| Structured errors | Clients receive safe error envelopes, not stack traces. |
+| Audit log | Each invocation writes a JSONL audit record with hashed problem text. |
+| Evidence handling | Past RCA memory is treated as supporting evidence, not ground truth. |
+
+## Project Structure
+
+```text
+agent/              Bounded RCA orchestrator and critique tools
+agentic_rca/        CLI package
+frontend/           React, TypeScript, Tailwind, Vite UI
+methods/            5 Whys, Fishbone, and Fault Tree method strategies
+providers/          Ollama and hosted OpenAI-compatible providers
+web/                FastAPI web job routes and SSE/polling support
+eval/               Evaluation harness and fixtures
+tests/              Unit and integration tests
+```
+
+## Documentation
+
+- [ARCHITECTURE.md](ARCHITECTURE.md): detailed runtime architecture
+- [docs/web_ui_guide.md](docs/web_ui_guide.md): web UI walkthrough
+- [web/README.md](web/README.md): web backend route details

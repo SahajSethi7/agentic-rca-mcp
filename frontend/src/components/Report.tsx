@@ -378,7 +378,6 @@ export default function Report({
           <div className="mt-4 space-y-2">
             <ExportLink href={urls?.pdf_url} label="Download PDF" detail="Printable RCA report" download />
             <ExportLink href={urls?.html_url} label="Open HTML Report" detail="Human-readable local report" />
-            <ExportLink href={urls?.json_url} label="View JSON" detail="Structured RCA payload" />
             <ExportLink href={urls?.memory_xlsx_url} label="Download Matching Past RCAs" detail="Excel workbook of retrieved past RCA matches" download />
           </div>
         </section>
