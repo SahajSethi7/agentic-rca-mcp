@@ -11,7 +11,7 @@ from config import Settings, get_settings
 from prompts import build_messages
 from providers.base import RCAProvider
 from providers.recovery import recover_generation_report
-from schemas import RCAInput, RCAGenerationReport, RCAReport
+from schemas import RCAGenerationReport, RCAInput, RCAReport
 from utils import classify_exception
 
 

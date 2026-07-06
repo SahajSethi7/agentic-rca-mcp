@@ -25,7 +25,7 @@ from prompts import build_revise_messages
 from providers.base import RCAProvider
 from rca_agent import build_provider, generate_rca
 from sanitizer import sanitize_rca_input
-from schemas import CritiqueResult, RCAInput, RCAGenerationReport, RCAReport
+from schemas import CritiqueResult, RCAGenerationReport, RCAInput, RCAReport
 from validation import validate_rca
 
 logger = logging.getLogger("agentic_rca.orchestrator")

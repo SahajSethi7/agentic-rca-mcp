@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any, Iterable
 
-from schemas import RCAInput, RCAGenerationReport
+from schemas import RCAGenerationReport, RCAInput
 
 _ALIASES = {
     "whyChain": "why_chain",

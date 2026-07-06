@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from schemas import CritiqueIssue, CritiqueResult, RCAInput, RCAGenerationReport, RCAReport
+from schemas import CritiqueIssue, CritiqueResult, RCAGenerationReport, RCAInput, RCAReport
 
 
 def valid_report_dict() -> dict:
