@@ -24,6 +24,25 @@ export default {
         },
         ink: { DEFAULT: '#0b1720', soft: '#3d5265', muted: '#687789' },
         command: { DEFAULT: '#061a2f' },
+        warn: {
+          50: '#fff8e1',
+          100: '#ffecb3',
+          500: '#f59e0b',
+          700: '#b45309',
+        },
+        danger: {
+          50: '#fef2f2',
+          200: '#fecaca',
+          500: '#ef4444',
+          700: '#b91c1c',
+          800: '#991b1b',
+        },
+        success: {
+          50: '#eaf8fe',
+          100: '#d3f0fc',
+          500: '#009fdb',
+          700: '#005a8f',
+        },
       },
       boxShadow: {
         card: '0 1px 2px rgba(6,26,47,.06), 0 16px 40px -28px rgba(0,90,143,.38)',

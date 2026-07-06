@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import type { Method } from "../types";
 import { METHOD_SHORT } from "../types";
 import type { AnalyzePayload } from "../api";
+import { SAMPLE_INCIDENTS } from "../sampleIncidents";
 import { CheckIcon } from "./icons";
 
 const METHODS: { v: Method; icon: string; detail: string }[] = [
@@ -12,9 +13,9 @@ const METHODS: { v: Method; icon: string; detail: string }[] = [
 
 const SEVERITIES = [
   { value: "low", label: "Low", color: "bg-att-400" },
-  { value: "medium", label: "Medium", color: "bg-amber-500" },
-  { value: "high", label: "High", color: "bg-red-500" },
-  { value: "critical", label: "Critical", color: "bg-red-700" },
+  { value: "medium", label: "Medium", color: "bg-warn-500" },
+  { value: "high", label: "High", color: "bg-danger-500" },
+  { value: "critical", label: "Critical", color: "bg-danger-700" },
 ];
 
 function labelForSeverity(value: string | null) {
@@ -46,6 +47,7 @@ export default function AnalysisForm({
   const [severity, setSeverity] = useState<string | null>(null);
   const [systemArea, setSystemArea] = useState("");
   const [context, setContext] = useState("");
+  const [selectedExample, setSelectedExample] = useState("");
 
   const effectiveCompare = useMemo(
     () => compareMethod === method ? METHODS.find((m) => m.v !== method)!.v : compareMethod,
@@ -63,6 +65,19 @@ export default function AnalysisForm({
       system_area: systemArea.trim() || null,
       context: context.trim() || null,
     });
+  }
+
+  function loadExample(id: string) {
+    setSelectedExample(id);
+    const sample = SAMPLE_INCIDENTS.find((item) => item.id === id);
+    if (!sample) return;
+    setProblem(sample.problem);
+    setContext(sample.context);
+    setSeverity(sample.severity);
+    setSystemArea(sample.systemArea);
+    setMethod(sample.method);
+    setCompareOn(Boolean(sample.compareMethod));
+    if (sample.compareMethod) setCompareMethod(sample.compareMethod);
   }
 
   const methodControl = (selected: Method, setSelected: (m: Method) => void, disabled?: Method) => (
@@ -107,7 +122,7 @@ export default function AnalysisForm({
         <div className="border-b border-slate-200 px-5 py-5 sm:px-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-att-700">New Analysis</p>
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-att-700">New Analysis</p>
               <h1 className="mt-1 text-[25px] font-black leading-tight tracking-tight text-ink">Create RCA Draft</h1>
               <p className="mt-2 max-w-[760px] text-[14px] leading-6 text-ink-soft">
                 Describe the incident, choose an RCA method, and generate local PDF, HTML, and supporting artifacts.
@@ -121,11 +136,32 @@ export default function AnalysisForm({
 
         <div className="space-y-5 px-5 py-5 sm:px-6">
           <div>
-            <label className="mb-1.5 block text-[13px] font-black text-ink" htmlFor="problem">Problem statement</label>
+            <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
+              <label className="block text-[13px] font-semibold text-ink" htmlFor="problem">Problem statement</label>
+              <div className="min-w-[240px]">
+                <label className="mb-1 block text-[11px] font-extrabold uppercase tracking-[0.12em] text-ink-muted" htmlFor="sample-incident">
+                  Load example incident
+                </label>
+                <select
+                  id="sample-incident"
+                  value={selectedExample}
+                  onChange={(e) => loadExample(e.target.value)}
+                  className="h-10 w-full rounded-md border border-att-200 bg-white px-3 text-[12.5px] font-semibold text-ink-soft outline-none transition hover:border-att-300"
+                >
+                  <option value="">Choose a demo-ready incident</option>
+                  {SAMPLE_INCIDENTS.map((sample) => (
+                    <option key={sample.id} value={sample.id}>{sample.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <textarea
               id="problem"
               value={problem}
-              onChange={(e) => setProblem(e.target.value)}
+              onChange={(e) => {
+                setProblem(e.target.value);
+                setSelectedExample("");
+              }}
               required
               placeholder="What happened, when it started, who or what is impacted, and what changed recently?"
               className="min-h-[148px] w-full resize-y rounded-lg border border-slate-300 bg-slate-50 px-3 py-3 text-[14px] leading-relaxed text-ink outline-none transition focus:border-att-500 focus:bg-white focus:ring-[3px] focus:ring-att-50"
@@ -137,7 +173,7 @@ export default function AnalysisForm({
           </div>
 
           <div>
-            <label className="mb-1.5 block text-[13px] font-black text-ink" htmlFor="context">Supporting context</label>
+            <label className="mb-1.5 block text-[13px] font-semibold text-ink" htmlFor="context">Supporting context</label>
             <textarea
               id="context"
               value={context}
@@ -149,7 +185,7 @@ export default function AnalysisForm({
 
           <div>
             <div className="mb-2 flex items-center justify-between gap-3">
-              <label className="text-[13px] font-black text-ink">RCA method</label>
+              <label className="text-[13px] font-semibold text-ink">RCA method</label>
               <span className="text-[11.5px] font-semibold text-ink-muted">Method-specific report visuals are generated after analysis.</span>
             </div>
             {methodControl(method, setMethod)}
@@ -157,7 +193,7 @@ export default function AnalysisForm({
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div>
-              <label className="mb-1.5 block text-[13px] font-black text-ink">Severity</label>
+              <label className="mb-1.5 block text-[13px] font-semibold text-ink">Severity</label>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
                 {SEVERITIES.map((s) => {
                   const on = severity === s.value;
@@ -178,7 +214,7 @@ export default function AnalysisForm({
               </div>
             </div>
             <div>
-              <label className="mb-1.5 block text-[13px] font-black text-ink" htmlFor="system-area">System area</label>
+              <label className="mb-1.5 block text-[13px] font-semibold text-ink" htmlFor="system-area">System area</label>
               <input
                 id="system-area"
                 type="text"
@@ -197,7 +233,7 @@ export default function AnalysisForm({
               className="flex w-full items-center justify-between gap-3 text-left"
             >
               <span>
-                <span className="block text-[13px] font-black text-ink">Compare methods</span>
+                <span className="block text-[13px] font-semibold text-ink">Compare methods</span>
                 <span className="block text-[12px] text-ink-muted">Run a second RCA method side by side.</span>
               </span>
               <span className={`relative h-6 w-11 flex-shrink-0 rounded-full transition ${compareOn ? "bg-att-600" : "bg-slate-300"}`}>
@@ -206,7 +242,7 @@ export default function AnalysisForm({
             </button>
             {compareOn && (
               <div className="mt-4">
-                <label className="mb-2 block text-[12.5px] font-black text-ink">Second method</label>
+                <label className="mb-2 block text-[12.5px] font-semibold text-ink">Second method</label>
                 {methodControl(effectiveCompare, setCompareMethod, method)}
               </div>
             )}

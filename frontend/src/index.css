@@ -15,6 +15,17 @@ body {
   background-attachment: fixed;
 }
 
+@layer base {
+  button,
+  [role="button"],
+  a,
+  input,
+  textarea,
+  select {
+    @apply focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-att-300 focus-visible:ring-offset-2;
+  }
+}
+
 @layer utilities {
   .hero-gradient { background: linear-gradient(135deg, #000000 0%, #061a2f 55%, #009fdb 100%); }
   .surface-grid {

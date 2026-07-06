@@ -1,16 +1,13 @@
 import type { ReactNode } from "react";
 import type { AnalyzePayload } from "../api";
-import type { FishboneDetail, FaultTreeDetail, KnownIssueMatch, RCAReport, RunUrls } from "../types";
+import type { FishboneDetail, KnownIssueMatch, RCAReport, RunUrls } from "../types";
 import { METHOD_SHORT } from "../types";
 import { CheckIcon } from "./icons";
+import MermaidTree from "./MermaidTree";
 
 function titleCase(value: string | null | undefined) {
   if (!value) return "Not set";
   return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function scoreLabel(score: number) {
-  return `${Math.round(score * 100)}%`;
 }
 
 function Section({
@@ -62,40 +59,28 @@ function SimpleList({ items, variant = "dot" }: { items: string[]; variant?: "do
 }
 
 function ConfidenceVerdict({ confidence }: { confidence: string }) {
+  const score = { low: 1, medium: 2, high: 3 }[confidence] ?? 0;
+  const fill = score === 1 ? "bg-warn-500" : "bg-att-500";
+  const copy = score === 3
+    ? "Strong agreement across the generated RCA structure."
+    : score === 2
+      ? "Usable draft; validate against logs and deployment evidence."
+      : "Needs careful review before operational action.";
   return (
     <div className="rounded-lg border border-att-200 bg-att-50 px-4 py-3">
-      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-att-700">Model confidence verdict</p>
-      <p className="mt-2 text-[22px] font-black capitalize text-ink">{confidence}</p>
-    </div>
-  );
-}
-
-function WhyChainVisual({ report }: { report: RCAReport }) {
-  const chain = report.why_chain ?? [];
-  if (!chain.length) return null;
-  return (
-    <div className="overflow-x-auto report-scroll pb-2">
-      <div className="flex min-w-[760px] items-stretch gap-3">
-        {chain.map((entry, index) => {
-          const last = index === chain.length - 1;
-          return (
-            <div key={entry.index} className="flex min-w-[180px] flex-1 items-stretch gap-3">
-              <div className={`flex flex-1 flex-col rounded-lg border px-3 py-3 ${
-                last ? "border-att-300 bg-att-50" : "border-slate-200 bg-white"
-              }`}>
-                <span className={`mb-2 grid h-7 w-7 place-items-center rounded-md text-[12px] font-black ${
-                  last ? "bg-att-600 text-white" : "bg-slate-100 text-ink"
-                }`}>
-                  {entry.index}
-                </span>
-                <p className="break-words text-[12.5px] font-black leading-4 text-ink">{entry.question}</p>
-                <p className="mt-2 break-words text-[12px] leading-5 text-ink-muted">{entry.answer}</p>
-              </div>
-              {!last && <span className="mt-12 h-0.5 w-6 flex-shrink-0 rounded bg-slate-300" />}
-            </div>
-          );
-        })}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-att-700">Model confidence verdict</p>
+        <p className="text-[13px] font-black capitalize text-ink">{confidence}</p>
       </div>
+      <div className="mt-3 grid grid-cols-3 gap-1.5" aria-label={`${confidence} confidence`}>
+        {[1, 2, 3].map((segment) => (
+          <span
+            key={segment}
+            className={`h-2.5 rounded-full ${segment <= score ? fill : "bg-white ring-1 ring-att-100"}`}
+          />
+        ))}
+      </div>
+      <p className="mt-2 text-[12.5px] leading-5 text-ink-soft">{copy}</p>
     </div>
   );
 }
@@ -142,75 +127,71 @@ function FishboneVisual({ detail, rootCause }: { detail: FishboneDetail; rootCau
   );
 }
 
-function FaultTreeVisual({ detail }: { detail: FaultTreeDetail }) {
+function tagsFor(match: KnownIssueMatch) {
+  return (match.tags || "")
+    .split(/[,;]+/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+function SimilarityBar({ score }: { score: number }) {
+  const pct = Math.max(0, Math.min(100, Math.round(score * 100)));
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <div className="mx-auto max-w-[900px]">
-        <div className="mx-auto max-w-[420px] rounded-lg border border-att-300 bg-att-50 px-4 py-3 text-center">
-          <p className="text-[11px] font-black uppercase tracking-[0.12em] text-att-700">Top event</p>
-          <p className="mt-1 break-words text-[14px] font-black text-ink">{detail.top_event}</p>
-        </div>
-        <div className="mx-auto h-8 w-px bg-slate-300" />
-        <div className="grid gap-3 md:grid-cols-2">
-          {(detail.gates || []).map((gate, index) => (
-            <div key={`${gate.event}-${index}`} className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-              <div className="flex items-center gap-2">
-                <span className={`rounded-md px-2 py-1 font-mono text-[11px] font-black text-white ${
-                  String(gate.type).toUpperCase() === "AND" ? "bg-command" : "bg-att-600"
-                }`}>
-                  {String(gate.type).toUpperCase()}
-                </span>
-                <p className="break-words text-[13px] font-black text-ink">{gate.event}</p>
-              </div>
-              <ul className="mt-3 space-y-2 border-l border-dashed border-slate-300 pl-4">
-                {(gate.children || []).map((child) => (
-                  <li key={child} className="text-[12.5px] leading-5 text-ink-muted">{child}</li>
-                ))}
-              </ul>
-            </div>
+    <div>
+      <div className="mb-1 flex items-center justify-between text-[11px] font-bold text-ink-muted">
+        <span>Similarity</span>
+        <span>{pct}% match</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-att-50">
+        <div className="h-1.5 rounded-full bg-att-400" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function MemoryMatchCard({ match, featured = false }: { match: KnownIssueMatch; featured?: boolean }) {
+  const tags = tagsFor(match);
+  return (
+    <div className={`rounded-lg border px-4 py-3 ${featured ? "border-att-200 bg-att-50" : "border-slate-200 bg-white"}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-md bg-att-700 px-2 py-1 font-mono text-[11px] font-black text-white">{match.incident_id}</span>
+        {match.service_name && <span className="rounded-md bg-white px-2 py-1 text-[11px] font-bold text-ink-muted ring-1 ring-att-100">{match.service_name}</span>}
+        {match.confidence && <span className="rounded-md bg-white px-2 py-1 text-[11px] font-bold capitalize text-att-800 ring-1 ring-att-100">{match.confidence}</span>}
+      </div>
+      <div className="mt-3">
+        <SimilarityBar score={match.similarity_score} />
+      </div>
+      <p className="mt-3 text-[12px] font-extrabold uppercase tracking-[0.1em] text-att-800">Known root cause</p>
+      <p className="mt-1 break-words text-[14px] font-semibold leading-5 text-ink">{match.root_cause}</p>
+      <p className={`mt-2 break-words text-[12.5px] leading-5 ${featured ? "text-att-900" : "text-ink-muted"}`}>{match.match_reason}</p>
+      {tags.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {tags.map((tag) => (
+            <span key={tag} className="rounded-md bg-white px-2 py-1 text-[11px] font-bold text-att-700 ring-1 ring-att-100">
+              {tag}
+            </span>
           ))}
         </div>
-        {(detail.basic_causes || []).length > 0 && (
-          <div className="mt-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
-            <p className="text-[12px] font-black uppercase tracking-[0.12em] text-ink-muted">Basic causes</p>
-            <SimpleList items={detail.basic_causes} />
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
 
 function KnownIssueMemory({ matches }: { matches: KnownIssueMatch[] }) {
   const visible = matches.slice(0, 3);
-  const [top, ...rest] = visible;
-  if (!top) {
+  if (!visible.length) {
     return <p className="text-[13px] font-semibold text-ink-muted">No similar past RCA crossed the configured threshold.</p>;
   }
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-att-200 bg-att-50 px-4 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-md bg-att-700 px-2 py-1 font-mono text-[11px] font-black text-white">{top.incident_id}</span>
-          <span className="rounded-md bg-white px-2 py-1 text-[11px] font-black text-att-800 ring-1 ring-att-100">{scoreLabel(top.similarity_score)} match</span>
-          {top.service_name && <span className="rounded-md bg-white px-2 py-1 text-[11px] font-bold text-ink-muted ring-1 ring-att-100">{top.service_name}</span>}
-        </div>
-        <p className="mt-3 text-[12px] font-black uppercase tracking-[0.1em] text-att-800">Known root cause</p>
-        <p className="mt-1 break-words text-[14px] font-bold leading-5 text-ink">{top.root_cause}</p>
-        <p className="mt-2 break-words text-[12.5px] leading-5 text-att-900">{top.match_reason}</p>
-      </div>
+      {visible.map((match, index) => <MemoryMatchCard key={match.incident_id} match={match} featured={index === 0} />)}
       {matches.length > visible.length && (
         <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-[12.5px] font-semibold text-ink-muted">
           Found {matches.length} matching past RCAs. Showing top {visible.length}; download the Excel workbook for the full list.
         </p>
       )}
-      {rest.map((match) => (
-        <div key={match.incident_id} className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <p className="font-mono text-[12px] font-black text-att-700">{match.incident_id} - {scoreLabel(match.similarity_score)} match</p>
-          <p className="mt-1 break-words text-[13px] font-semibold leading-5 text-ink-soft">{match.root_cause}</p>
-        </div>
-      ))}
     </div>
   );
 }
@@ -260,6 +241,7 @@ export default function Report({
   const fishbone = report.method_detail?.fishbone;
   const faultTree = report.method_detail?.fault_tree;
   const methodLabel = report.method ? METHOD_SHORT[report.method] : "RCA";
+  const contributingSection = fishbone ? 6 : 5;
   const qualityChecks = [
     ["Completeness", Boolean(report.summary && report.root_cause && recommendations.length)],
     ["Causal path", (report.why_chain ?? []).length >= 3],
@@ -327,8 +309,8 @@ export default function Report({
           </Section>
         </div>
 
-        <Section number={4} title="Why Chain">
-          <WhyChainVisual report={report} />
+        <Section number={4} title={faultTree ? "Fault Tree / Why Chain Diagram" : "Why Chain Diagram"}>
+          <MermaidTree report={report} />
         </Section>
 
         {fishbone && (
@@ -337,36 +319,30 @@ export default function Report({
           </Section>
         )}
 
-        {faultTree && (
-          <Section number={5} title="Cause Analysis (Fault Tree)">
-            <FaultTreeVisual detail={faultTree} />
-          </Section>
-        )}
-
         <div className="grid gap-5 lg:grid-cols-2">
-          <Section number={6} title="Contributing Factors">
+          <Section number={contributingSection} title="Contributing Factors">
             <SimpleList items={factors} />
           </Section>
-          <Section number={7} title="Recommendations">
+          <Section number={contributingSection + 1} title="Recommendations">
             <SimpleList items={recommendations} variant="check" />
           </Section>
-          <Section number={8} title="Evidence Needed">
+          <Section number={contributingSection + 2} title="Evidence Needed">
             <SimpleList items={evidence} variant="check" />
           </Section>
-          <Section number={9} title="Assumptions">
+          <Section number={contributingSection + 3} title="Assumptions">
             <SimpleList items={assumptions} />
           </Section>
         </div>
 
-        <Section number={10} title="Past RCA Memory">
+        <Section number={contributingSection + 4} title="Past RCA Memory">
           <KnownIssueMemory matches={memoryMatches} />
         </Section>
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
-          <Section number={11} title="Validation Notes">
+          <Section number={contributingSection + 5} title="Validation Notes">
             <SimpleList items={notes} />
           </Section>
-          <Section number={12} title="Confidence">
+          <Section number={contributingSection + 6} title="Confidence">
             <ConfidenceVerdict confidence={report.confidence} />
           </Section>
         </div>
@@ -411,7 +387,7 @@ export default function Report({
             {qualityChecks.map(([label, ok]) => (
               <div key={label as string} className="flex items-center justify-between gap-3 text-[12.5px]">
                 <span className="font-bold text-ink-soft">{label}</span>
-                <span className={`rounded-md px-2 py-1 text-[11px] font-black ${ok ? "bg-att-50 text-att-700" : "bg-amber-50 text-amber-700"}`}>
+                <span className={`rounded-md px-2 py-1 text-[11px] font-black ${ok ? "bg-att-50 text-att-700" : "bg-warn-50 text-warn-700"}`}>
                   {ok ? "Passed" : "Review"}
                 </span>
               </div>
