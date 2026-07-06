@@ -34,8 +34,7 @@ The UI needs the API running, and the API needs a model to talk to.
 2. Have a model available. The default is local Ollama:
 
    ```bash
-   ollama pull qwen3.5:9b
-   ollama pull qwen3.5:4b
+   ollama pull qwen3:8b
    ollama pull llama3.2:latest
    ```
 

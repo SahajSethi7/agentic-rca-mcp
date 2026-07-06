@@ -6,13 +6,10 @@
 html, body, #root { height: 100%; }
 body {
   margin: 0;
-  font-family: 'Aptos', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   color: #0b1720;
-  background:
-    linear-gradient(135deg, #ffffff 0%, #eaf8fe 48%, #f5fbfe 100%),
-    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  background-attachment: fixed;
+  background: #f8fafc;
 }
 
 @layer base {
@@ -22,7 +19,7 @@ body {
   input,
   textarea,
   select {
-    @apply focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-att-300 focus-visible:ring-offset-2;
+    @apply focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary focus-visible:ring-offset-2;
   }
 }
 
@@ -35,6 +32,13 @@ body {
     background-size: 28px 28px;
   }
   .pulse-ring { animation: pulsering 1.3s ease-in-out infinite; }
+  .surface-enter { animation: surfacefade 120ms ease-out; }
+  .toast-enter { animation: toastslide 140ms ease-out; }
+  .skeleton-shimmer {
+    background: linear-gradient(90deg, #eaf8fe 0%, #d3f0fc 45%, #eaf8fe 100%);
+    background-size: 220% 100%;
+    animation: shimmer 1.25s ease-in-out infinite;
+  }
 }
 
 @keyframes pulsering {
@@ -44,3 +48,52 @@ body {
 
 .report-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
 .report-scroll::-webkit-scrollbar-thumb { background: #9fe2f6; border-radius: 8px; }
+
+@keyframes surfacefade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toastslide {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: 180% 0; }
+  100% { background-position: -40% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+@media print {
+  body { background: #ffffff; }
+  .app-sidebar,
+  .app-topbar,
+  .app-mobile-nav,
+  .app-footer,
+  .report-print-hide,
+  .report-rail {
+    display: none !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  article {
+    display: block !important;
+  }
+  .shadow-card,
+  .shadow-hero {
+    box-shadow: none !important;
+  }
+}

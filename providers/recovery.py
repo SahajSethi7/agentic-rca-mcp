@@ -478,3 +478,60 @@ def _fallback_payload(rca_input: RCAInput) -> dict[str, Any]:
         "method_detail": None,
         "confidence": "low",
     }
+
+
+def _looks_like_no_answer(exc: Exception) -> bool:
+    """True when the model returned no usable content (empty / length-truncated)."""
+    text = f"{type(exc).__name__} {exc}".lower()
+    if "incompleteoutput" in text:
+        return True
+    if "did not return a complete" in text:
+        return True
+    return ("finish_reason" in text) and ("length" in text)
+
+
+def handle_generation_failure(
+    exc: Exception, rca_input: RCAInput, *, strict_retry: bool
+) -> RCAGenerationReport:
+    """Decide what to do when a structured generation call fails.
+
+    - Non-output failures (connectivity, auth, timeout, or a crashed/OOM-killed
+      model server) are re-raised so they surface as infrastructure errors
+      instead of a misleading conservative draft.
+    - On the first pass, output-invalid failures are also re-raised so
+      ``generate_rca`` can run its one stricter retry.
+    - On the stricter retry: if the model returned no usable answer at all
+      (empty / token-limit-while-reasoning) we surface a clear "no answer"
+      error; otherwise we fall back to a deterministic conservative draft.
+    """
+    import logging
+
+    from schemas import StructuredError
+    from utils import PipelineError, classify_exception, utc_now_iso
+
+    logger = logging.getLogger("agentic_rca.provider")
+    if classify_exception(exc).error_type != "model_output_invalid":
+        raise exc
+    logger.warning(
+        "Structured RCA generation failed (%s); strict_retry=%s.",
+        type(exc).__name__,
+        strict_retry,
+        exc_info=True,
+    )
+    if not strict_retry:
+        # Let generate_rca run its one stricter retry before we give up.
+        raise exc
+    if _looks_like_no_answer(exc):
+        raise PipelineError(
+            StructuredError(
+                error_type="model_output_invalid",
+                message=(
+                    "The model produced no answer (empty response, likely because "
+                    "it hit the token limit while reasoning). Use a non-thinking "
+                    "model, reduce the prompt size, or raise RCA_MAX_OUTPUT_TOKENS."
+                ),
+                detail=type(exc).__name__,
+                timestamp=utc_now_iso(),
+            )
+        )
+    return recover_generation_report(exc, rca_input)

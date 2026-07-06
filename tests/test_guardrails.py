@@ -497,3 +497,19 @@ def test_audit_record_has_the_benchmarkable_fields(
     assert record["confidence"] in {"low", "medium", "high"}
     assert record["entry_point"] == "cli"
     assert len(record["problem_sha256"]) == 16
+
+
+def test_server_crash_is_classified_as_provider_unreachable() -> None:
+    """An OOM-killed model server (500 / 'signal: killed') must surface as
+    infrastructure, not as 'bad model output' that silently falls back."""
+
+    class InstructorRetryException(Exception):
+        pass
+
+    exc = InstructorRetryException(
+        "Error code: 500 - {'error': {'message': 'llama-server process has "
+        "terminated: signal: killed', 'type': 'api_error'}}"
+    )
+    structured = classify_exception(exc)
+    assert structured.error_type == "provider_unreachable"
+    assert "memory" in structured.message.lower()

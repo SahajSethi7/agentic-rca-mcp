@@ -26,15 +26,15 @@ function Icon({ name }: { name: "audit" | "settings" }) {
 
 function StatusBadge({ label, value, tone = "blue" }: { label: string; value: string; tone?: "blue" | "green" | "amber" }) {
   const toneClass = {
-    blue: "border-att-100 bg-att-50 text-att-700",
-    green: "border-att-100 bg-att-50 text-att-800",
+    blue: "border-primary-soft bg-primary-tint text-primary-selected",
+    green: "border-primary-soft bg-primary-tint text-primary-selected",
     amber: "border-slate-200 bg-slate-50 text-ink-soft",
   }[tone];
 
   return (
-    <div className={`hidden min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-[12px] font-bold md:flex ${toneClass}`}>
-      <span className="text-[10px] font-black uppercase tracking-[0.12em] opacity-70">{label}</span>
-      <span className="max-w-[190px] truncate font-mono text-[11.5px]">{value}</span>
+    <div className={`hidden min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-ui font-bold md:flex ${toneClass}`}>
+      <span className="text-micro font-extrabold uppercase tracking-[0.12em] opacity-70">{label}</span>
+      <span className="max-w-[190px] truncate font-mono text-ui">{value}</span>
     </div>
   );
 }
@@ -53,11 +53,11 @@ export default function TopBar({
   const validationEnabled = uiMeta?.validation?.enabled ?? true;
 
   return (
-    <header className="sticky top-0 z-30 border-b border-att-100 bg-white/90 backdrop-blur">
+    <header className="app-topbar sticky top-0 z-30 border-b border-primary-soft bg-white/90 backdrop-blur">
       <div className="flex min-h-[64px] items-center gap-3 px-4 sm:px-6">
         <div className="min-w-0 md:hidden">
-          <p className="truncate text-[13px] font-black text-ink">RCA Assistant</p>
-          <p className="truncate text-[11px] text-ink-muted">Local Workspace</p>
+          <p className="truncate text-body-sm font-extrabold text-ink">RCA Assistant</p>
+          <p className="truncate text-caption text-ink-muted">Local Workspace</p>
         </div>
         <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
           <StatusBadge label="Writer" value={writer} />
@@ -67,12 +67,13 @@ export default function TopBar({
             tone={validationEnabled ? "green" : "amber"}
           />
           <StatusBadge label="Mode" value={uiMeta?.provider === "hosted" ? "hosted provider" : "local model"} tone="green" />
+          <StatusBadge label="Build" value="v1.0.0 local" tone="amber" />
         </div>
         <div className="flex flex-1 items-center justify-end gap-2">
           <button
             type="button"
             onClick={onAuditLogs}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-[12.5px] font-bold text-ink-soft transition hover:border-att-200 hover:text-att-700"
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-ui font-bold text-ink-soft transition hover:border-primary-soft hover:text-primary-selected"
           >
             <Icon name="audit" />
             Audit Logs
@@ -82,7 +83,7 @@ export default function TopBar({
             onClick={onSettings}
             aria-label="Open settings"
             title="Settings"
-            className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-[15px] font-black text-ink-soft transition hover:border-att-200 hover:text-att-700"
+            className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-lead font-extrabold text-ink-soft transition hover:border-primary-soft hover:text-primary-selected"
           >
             <Icon name="settings" />
           </button>

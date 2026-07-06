@@ -23,7 +23,7 @@ Web UI / FastAPI / CLI / MCP
   -> Pydantic RCAReport
   -> critique and bounded revision
   -> optional validation model
-  -> PDF, HTML, internal JSON, audit log
+  -> PDF, HTML, internal JSON, matching-RCA workbook, audit log
 ```
 
 Every interface uses the same `RCAAgent.run()` path, so sanitization,
@@ -39,6 +39,7 @@ It provides:
 - RCA input form with method, severity, system area, and context controls
 - live stage progress over Server-Sent Events with polling fallback
 - React-rendered RCA report
+- in-report table of contents with scroll-position tracking
 - PDF and standalone HTML report links
 - matching past-RCA Excel export when memory matches are available
 - two-method comparison
@@ -212,9 +213,12 @@ VALIDATION_MODEL
 
 Recommended local models:
 
-- `qwen3.5:9b` for RCA generation
-- `qwen3.5:4b` as a lower-latency fallback
+- `qwen3:8b` for RCA generation
 - `llama3.2:latest` for validation and evaluation
+
+The default generation budget is `RCA_MAX_OUTPUT_TOKENS=4096`. Qwen3 prompts
+receive the `/no_think` soft switch so the Ollama OpenAI-compatible endpoint
+does not spend the whole response budget on hidden reasoning.
 
 ## Past RCA Memory
 
@@ -269,12 +273,23 @@ RCA_AGENT_TIMEOUT_SECONDS
 validation notes. Validation failures are fail-soft: the report is kept and the
 issue is recorded.
 
+Provider recovery is deliberately conservative:
+
+- infrastructure failures such as 5xx responses, `llama-server` crashes, or
+  `signal: killed` surface as `provider_unreachable`
+- first-pass structured-output failures re-raise so the stricter retry can run
+- strict-retry responses that contain no usable answer surface a clear
+  `model_output_invalid` error
+- genuinely malformed output can still degrade to a deterministic conservative
+  draft as the last resort
+
 ## Guardrails
 
 | Area | Implementation |
 | --- | --- |
 | Input sanitization | `sanitizer.py` redacts secrets, applies length limits, strips forged sentinels, and fences user text as data. |
 | Structured output | Providers validate model responses as Pydantic objects. |
+| Provider failure classification | Crashed/OOM-killed model servers surface as infrastructure errors instead of silent fallback drafts. |
 | Bounded revisions | Revision rounds and total agent runtime are capped. |
 | Anti-blame handling | Reports with unresolved individual blame are capped to low confidence. |
 | Restricted writes | `utils.enforce_output_path()` keeps artifacts inside `OUTPUT_DIR`. |
@@ -295,6 +310,9 @@ The engine writes local artifacts under `OUTPUT_DIR`:
 HTML report. The React UI renders from the full `RCAReport` payload returned by
 the web job event.
 
+The built frontend `dist/` directory is generated during Docker/frontend builds
+and is ignored in Git.
+
 ## Docker Deployment
 
 `docker-compose.yml` starts:
@@ -309,6 +327,10 @@ the first Compose startup.
 
 The frontend proxies `/ui`, `/rca`, and `/health` to the backend service over
 the Compose network.
+
+Authentication is not currently implemented. A previous API-key-only proposal
+was rejected because it protected only `POST /rca` and did not cover the main
+web job routes.
 
 ## Evaluation And Tests
 

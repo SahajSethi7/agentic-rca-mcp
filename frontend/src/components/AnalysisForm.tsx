@@ -93,19 +93,19 @@ export default function AnalysisForm({
             onClick={() => setSelected(m.v)}
             className={`min-h-[72px] rounded-lg border px-3 py-3 text-left transition ${
               on
-                ? "border-att-500 bg-att-50 text-att-800 ring-2 ring-att-100"
-                : "border-slate-200 bg-white text-ink-soft hover:border-att-200 hover:bg-att-50"
+                ? "border-primary bg-primary-tint text-primary-selected ring-2 ring-primary-soft"
+                : "border-slate-200 bg-white text-ink-soft hover:border-primary-soft hover:bg-primary-tint"
             } ${off ? "cursor-not-allowed opacity-40" : ""}`}
           >
             <span className="flex items-center gap-2">
-              <span className={`grid h-7 w-7 place-items-center rounded-md text-[12px] font-black ${
-                on ? "bg-att-500 text-white" : "bg-slate-100 text-ink"
+              <span className={`grid h-7 w-7 place-items-center rounded-md text-ui font-extrabold ${
+                on ? "bg-primary text-white" : "bg-slate-100 text-ink"
               }`}>
                 {m.icon}
               </span>
-              <span className="text-[13.5px] font-black">{METHOD_SHORT[m.v]}</span>
+              <span className="text-body-sm font-extrabold">{METHOD_SHORT[m.v]}</span>
             </span>
-            <span className="mt-1 block text-[11.5px] font-semibold leading-4 opacity-75">{m.detail}</span>
+            <span className="mt-1 block text-ui font-semibold leading-4 opacity-75">{m.detail}</span>
           </button>
         );
       })}
@@ -122,13 +122,13 @@ export default function AnalysisForm({
         <div className="border-b border-slate-200 px-5 py-5 sm:px-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-att-700">New Analysis</p>
-              <h1 className="mt-1 text-[25px] font-black leading-tight tracking-tight text-ink">Create RCA Draft</h1>
-              <p className="mt-2 max-w-[760px] text-[14px] leading-6 text-ink-soft">
+              <p className="text-caption font-extrabold uppercase tracking-[0.14em] text-primary-selected">New Analysis</p>
+              <h1 className="mt-1 text-title font-extrabold leading-tight tracking-tight text-ink">Create RCA Draft</h1>
+              <p className="mt-2 max-w-[760px] text-body leading-6 text-ink-soft">
                 Describe the incident, choose an RCA method, and generate local PDF, HTML, and supporting artifacts.
               </p>
             </div>
-            <div className="rounded-md border border-att-100 bg-att-50 px-3 py-2 text-[12px] font-bold text-att-700">
+            <div className="rounded-md border border-primary-soft bg-primary-tint px-3 py-2 text-ui font-bold text-primary-selected">
               Outputs local
             </div>
           </div>
@@ -137,16 +137,16 @@ export default function AnalysisForm({
         <div className="space-y-5 px-5 py-5 sm:px-6">
           <div>
             <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
-              <label className="block text-[13px] font-semibold text-ink" htmlFor="problem">Problem statement</label>
+              <label className="block text-body-sm font-semibold text-ink" htmlFor="problem">Problem statement</label>
               <div className="min-w-[240px]">
-                <label className="mb-1 block text-[11px] font-extrabold uppercase tracking-[0.12em] text-ink-muted" htmlFor="sample-incident">
+                <label className="mb-1 block text-caption font-extrabold uppercase tracking-[0.12em] text-ink-muted" htmlFor="sample-incident">
                   Load example incident
                 </label>
                 <select
                   id="sample-incident"
                   value={selectedExample}
                   onChange={(e) => loadExample(e.target.value)}
-                  className="h-10 w-full rounded-md border border-att-200 bg-white px-3 text-[12.5px] font-semibold text-ink-soft outline-none transition hover:border-att-300"
+                  className="h-10 w-full rounded-md border border-primary-soft bg-white px-3 text-ui font-semibold text-ink-soft outline-none transition hover:border-primary"
                 >
                   <option value="">Choose a demo-ready incident</option>
                   {SAMPLE_INCIDENTS.map((sample) => (
@@ -163,37 +163,38 @@ export default function AnalysisForm({
                 setSelectedExample("");
               }}
               required
+              maxLength={6000}
               placeholder="What happened, when it started, who or what is impacted, and what changed recently?"
-              className="min-h-[148px] w-full resize-y rounded-lg border border-slate-300 bg-slate-50 px-3 py-3 text-[14px] leading-relaxed text-ink outline-none transition focus:border-att-500 focus:bg-white focus:ring-[3px] focus:ring-att-50"
+              className="min-h-[148px] w-full resize-y rounded-lg border border-slate-300 bg-slate-50 px-3 py-3 text-body leading-relaxed text-ink outline-none transition focus:border-primary focus:bg-white focus:ring-[3px] focus:ring-primary-tint"
             />
-            <div className="mt-1.5 flex justify-between gap-3 text-[11.5px] text-ink-muted">
+            <div className="mt-1.5 flex justify-between gap-3 text-ui text-ink-muted">
               <span>Supporting facts are treated as data, not instructions.</span>
               <span>{problem.length} / 6000</span>
             </div>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-[13px] font-semibold text-ink" htmlFor="context">Supporting context</label>
+            <label className="mb-1.5 block text-body-sm font-semibold text-ink" htmlFor="context">Supporting context</label>
             <textarea
               id="context"
               value={context}
               onChange={(e) => setContext(e.target.value)}
               placeholder="Paste logs, timeline, recent changes, metrics, or constraints that should inform the RCA."
-              className="min-h-[108px] w-full resize-y rounded-lg border border-slate-300 bg-slate-50 px-3 py-3 text-[14px] leading-relaxed text-ink outline-none transition focus:border-att-500 focus:bg-white focus:ring-[3px] focus:ring-att-50"
+              className="min-h-[108px] w-full resize-y rounded-lg border border-slate-300 bg-slate-50 px-3 py-3 text-body leading-relaxed text-ink outline-none transition focus:border-primary focus:bg-white focus:ring-[3px] focus:ring-primary-tint"
             />
           </div>
 
           <div>
             <div className="mb-2 flex items-center justify-between gap-3">
-              <label className="text-[13px] font-semibold text-ink">RCA method</label>
-              <span className="text-[11.5px] font-semibold text-ink-muted">Method-specific report visuals are generated after analysis.</span>
+              <label className="text-body-sm font-semibold text-ink">RCA method</label>
+              <span className="text-ui font-semibold text-ink-muted">Method-specific report visuals are generated after analysis.</span>
             </div>
             {methodControl(method, setMethod)}
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div>
-              <label className="mb-1.5 block text-[13px] font-semibold text-ink">Severity</label>
+              <label className="mb-1.5 block text-body-sm font-semibold text-ink">Severity</label>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
                 {SEVERITIES.map((s) => {
                   const on = severity === s.value;
@@ -202,8 +203,8 @@ export default function AnalysisForm({
                       type="button"
                       key={s.value}
                       onClick={() => setSeverity(on ? null : s.value)}
-                      className={`flex h-10 items-center gap-2 rounded-md border px-3 text-left text-[12.5px] font-bold transition ${
-                        on ? "border-att-500 bg-att-50 text-att-800 ring-2 ring-att-100" : "border-slate-200 bg-white text-ink-soft hover:border-att-200"
+                      className={`flex h-10 items-center gap-2 rounded-md border px-3 text-left text-ui font-bold transition ${
+                        on ? "border-primary bg-primary-tint text-primary-selected ring-2 ring-primary-soft" : "border-slate-200 bg-white text-ink-soft hover:border-primary-soft"
                       }`}
                     >
                       <span className={`h-2.5 w-2.5 rounded-full ${s.color}`} />
@@ -214,14 +215,14 @@ export default function AnalysisForm({
               </div>
             </div>
             <div>
-              <label className="mb-1.5 block text-[13px] font-semibold text-ink" htmlFor="system-area">System area</label>
+              <label className="mb-1.5 block text-body-sm font-semibold text-ink" htmlFor="system-area">System area</label>
               <input
                 id="system-area"
                 type="text"
                 value={systemArea}
                 onChange={(e) => setSystemArea(e.target.value)}
                 placeholder="Optional"
-                className="h-10 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-[14px] text-ink outline-none transition focus:border-att-500 focus:bg-white focus:ring-[3px] focus:ring-att-50"
+                className="h-10 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-body text-ink outline-none transition focus:border-primary focus:bg-white focus:ring-[3px] focus:ring-primary-tint"
               />
             </div>
           </div>
@@ -233,16 +234,16 @@ export default function AnalysisForm({
               className="flex w-full items-center justify-between gap-3 text-left"
             >
               <span>
-                <span className="block text-[13px] font-semibold text-ink">Compare methods</span>
-                <span className="block text-[12px] text-ink-muted">Run a second RCA method side by side.</span>
+                <span className="block text-body-sm font-semibold text-ink">Compare methods</span>
+                <span className="block text-ui text-ink-muted">Run a second RCA method side by side.</span>
               </span>
-              <span className={`relative h-6 w-11 flex-shrink-0 rounded-full transition ${compareOn ? "bg-att-600" : "bg-slate-300"}`}>
+              <span className={`relative h-6 w-11 flex-shrink-0 rounded-full transition ${compareOn ? "bg-primary-hover" : "bg-slate-300"}`}>
                 <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-all ${compareOn ? "left-6" : "left-1"}`} />
               </span>
             </button>
             {compareOn && (
               <div className="mt-4">
-                <label className="mb-2 block text-[12.5px] font-semibold text-ink">Second method</label>
+                <label className="mb-2 block text-ui font-semibold text-ink">Second method</label>
                 {methodControl(effectiveCompare, setCompareMethod, method)}
               </div>
             )}
@@ -252,8 +253,8 @@ export default function AnalysisForm({
 
       <aside className="rounded-lg border border-slate-200 bg-white shadow-card xl:sticky xl:top-[84px]">
         <div className="border-b border-slate-200 px-5 py-4">
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-ink-muted">Run Summary</p>
-          <h2 className="mt-1 text-[17px] font-black text-ink">Draft configuration</h2>
+          <p className="text-caption font-extrabold uppercase tracking-[0.14em] text-ink-muted">Run Summary</p>
+          <h2 className="mt-1 text-section font-extrabold text-ink">Draft configuration</h2>
         </div>
         <div className="space-y-4 p-5">
           {[
@@ -264,27 +265,27 @@ export default function AnalysisForm({
             ["Validator", validationEnabled ? validatorModel : "Off"],
             ["Memory", memoryLabel],
           ].map(([label, value]) => (
-            <div key={label} className="grid grid-cols-[112px_minmax(0,1fr)] gap-3 text-[13px]">
+            <div key={label} className="grid grid-cols-[112px_minmax(0,1fr)] gap-3 text-body-sm">
               <span className="font-bold text-ink-muted">{label}</span>
               <span className="min-w-0 break-words font-extrabold text-ink">{value}</span>
             </div>
           ))}
 
           <div className="border-t border-slate-200 pt-4">
-            <p className="mb-3 text-[12px] font-black uppercase tracking-[0.12em] text-ink-muted">Expected outputs</p>
+            <p className="mb-3 text-ui font-extrabold uppercase tracking-[0.12em] text-ink-muted">Expected outputs</p>
             <div className="space-y-2">
               {["HTML web report", "PDF printable report", "Matching past RCA Excel workbook"].map((item) => (
                 <div key={item} className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                  <span className="grid h-5 w-5 place-items-center rounded-full bg-att-100 text-att-700"><CheckIcon className="h-3.5 w-3.5" /></span>
-                  <span className="text-[12.5px] font-bold text-ink-soft">{item}</span>
+                  <span className="grid h-5 w-5 place-items-center rounded-full bg-primary-soft text-primary-selected"><CheckIcon className="h-3.5 w-3.5" /></span>
+                  <span className="text-ui font-bold text-ink-soft">{item}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="rounded-lg border border-att-200 bg-att-50 px-4 py-3">
-            <p className="text-[13px] font-black text-att-800">Local-first by design</p>
-            <p className="mt-1 text-[12.5px] leading-5 text-att-800">
+          <div className="rounded-lg border border-primary-soft bg-primary-tint px-4 py-3">
+            <p className="text-body-sm font-extrabold text-primary-selected">Local-first by design</p>
+            <p className="mt-1 text-ui leading-5 text-primary-selected">
               Analysis runs against the configured model provider. Outputs are written locally and the model server must be available.
             </p>
           </div>
@@ -292,7 +293,7 @@ export default function AnalysisForm({
           <button
             type="submit"
             disabled={busy}
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-att-500 px-4 text-[14px] font-black text-white shadow-[0_14px_28px_-18px_rgba(0,159,219,.75)] transition hover:bg-att-600 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-body font-extrabold text-white shadow-[0_14px_28px_-18px_rgba(0,159,219,.75)] transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy && <span className="h-4 w-4 animate-spin rounded-full border-[2.5px] border-white/40 border-t-white" />}
             {busy ? "Starting analysis" : "Generate RCA"}

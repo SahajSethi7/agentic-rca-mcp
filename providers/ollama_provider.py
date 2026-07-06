@@ -10,9 +10,8 @@ from openai import OpenAI
 from config import Settings, get_settings
 from prompts import build_messages
 from providers.base import RCAProvider
-from providers.recovery import recover_generation_report
+from providers.recovery import handle_generation_failure
 from schemas import RCAGenerationReport, RCAInput, RCAReport
-from utils import classify_exception
 
 
 class OllamaProvider(RCAProvider):
@@ -53,12 +52,11 @@ class OllamaProvider(RCAProvider):
                     rca_input,
                     prompt_version=prompt_version,
                     strict_retry=strict_retry,
+                    model=self.model,
                 ),
             )
         except Exception as exc:
-            if classify_exception(exc).error_type != "model_output_invalid":
-                raise
-            draft = recover_generation_report(exc, rca_input)
+            draft = handle_generation_failure(exc, rca_input, strict_retry=strict_retry)
 
         report = draft.to_rca_report()
         latency = round(perf_counter() - started, 3)

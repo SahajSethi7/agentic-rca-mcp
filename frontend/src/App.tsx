@@ -44,12 +44,23 @@ const NAV: { id: Surface; label: string; icon: ComponentType<{ className?: strin
 
 const RECENT_RUN_LIMIT = 40;
 const RUN_HISTORY_STORAGE_KEY = "rcaAssistant.runHistory.v1";
+const DOCUMENT_TITLES: Record<Surface, string> = {
+  recent: "Recent Runs",
+  new: "New Analysis",
+  reports: "Reports",
+  run: "Live Run",
+  report: "Report",
+  compare: "Compare Methods",
+  audit: "Audit Logs",
+  exports: "Exports",
+  settings: "Settings",
+};
 
 function runKey(run: Pick<RunState, "index" | "job_id">) {
   return `${run.job_id ?? "session"}:${run.index}`;
 }
 
-function parseRouteHash(): { surface: Surface; runKey?: string | null } {
+function parseRouteHash(): { surface: Surface; runKey?: string | null; matched: boolean } {
   const raw = window.location.hash.replace(/^#\/?/, "");
   const [surface, encodedKey] = raw.split("/");
   const known = new Set<Surface>(["recent", "new", "reports", "run", "report", "compare", "audit", "exports", "settings"]);
@@ -57,9 +68,11 @@ function parseRouteHash(): { surface: Surface; runKey?: string | null } {
     return {
       surface: surface as Surface,
       runKey: encodedKey ? decodeURIComponent(encodedKey) : undefined,
+      matched: true,
     };
   }
-  return { surface: "new" };
+  // Unknown hash (e.g. a stray in-page section anchor) - do not treat as a route.
+  return { surface: "new", matched: false };
 }
 
 function routeHash(surface: Surface, key?: string | null) {
@@ -116,15 +129,23 @@ function activityFromStage(e: Extract<SSEvent, { type: "stage" }>, at = Date.now
   };
 }
 
+function BrandMark({ className = "h-10 w-10" }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 48 48" className={className}>
+      <rect width="48" height="48" rx="10" fill="#009fdb" />
+      <path d="M14 14h14a7 7 0 0 1 0 14h-4l8 8h-8l-8-8h-2v8H8V14h6Zm0 6v4h14a2 2 0 0 0 0-4H14Z" fill="#fff" />
+      <path d="M34 14h6v6h-6zM34 24h6v6h-6z" fill="#061a2f" />
+    </svg>
+  );
+}
+
 function ShellLogo() {
   return (
     <div className="flex items-center gap-3 px-5 py-5">
-      <div className="relative grid h-10 w-10 place-items-center rounded-lg bg-att-500 text-white shadow-[0_14px_32px_-18px_rgba(0,159,219,.9)]">
-        <span className="text-[23px] font-black leading-none">+</span>
-      </div>
+      <BrandMark className="h-10 w-10 drop-shadow-[0_14px_22px_rgba(0,159,219,.25)]" />
       <div className="min-w-0">
-        <p className="truncate text-[18px] font-black tracking-tight text-white">RCA Assistant</p>
-        <p className="mt-0.5 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Local Workspace</p>
+        <p className="truncate text-section font-extrabold tracking-tight text-white">RCA Assistant</p>
+        <p className="mt-0.5 text-caption font-bold uppercase tracking-[0.14em] text-slate-400">Local Workspace</p>
       </div>
     </div>
   );
@@ -144,7 +165,7 @@ function Sidebar({
   provider: string;
 }) {
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 hidden w-[264px] flex-col bg-gradient-to-b from-[#000000] via-[#061a2f] to-[#003b5c] text-white shadow-[18px_0_36px_-34px_rgba(6,26,47,.9)] lg:flex">
+    <aside className="app-sidebar fixed inset-y-0 left-0 z-40 hidden w-[264px] flex-col bg-gradient-to-b from-[#000000] via-[#061a2f] to-[#003b5c] text-white shadow-[18px_0_36px_-34px_rgba(6,26,47,.9)] lg:flex">
       <ShellLogo />
       <div className="mx-5 h-px bg-white/10" />
       <nav className="flex-1 space-y-1 px-3 py-5">
@@ -157,7 +178,7 @@ function Sidebar({
               type="button"
               onClick={() => onNavigate(item.id)}
               aria-current={selected ? "page" : undefined}
-              className={`flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-[14px] font-bold transition ${
+              className={`flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-body font-bold transition ${
                 selected
                   ? "bg-white/10 text-white ring-1 ring-att-400/50"
                   : "text-slate-300 hover:bg-white/10 hover:text-white"
@@ -174,8 +195,8 @@ function Sidebar({
 
       <div className="space-y-4 px-5 pb-5">
         <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Local-first</p>
-          <div className="mt-3 space-y-2 text-[12.5px] font-semibold text-slate-300">
+          <p className="text-caption font-extrabold uppercase tracking-[0.14em] text-slate-400">Local-first</p>
+          <div className="mt-3 space-y-2 text-ui font-semibold text-slate-300">
             {["Data stays on this device", "Model server required", "Outputs written locally"].map((item) => (
               <div key={item} className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-att-400" />
@@ -187,13 +208,13 @@ function Sidebar({
 
         <div className="rounded-lg border border-white/10 bg-white/10 p-4">
           <div className="flex items-start gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-md border border-white/10 bg-white/5 text-[15px] font-black">LW</span>
+            <span className="grid h-9 w-9 place-items-center rounded-md border border-white/10 bg-white/5 text-lead font-extrabold">LW</span>
             <div className="min-w-0">
-              <p className="font-black text-white">Local Workspace</p>
-              <p className="mt-1 text-[12px] font-semibold text-slate-400">{provider === "hosted" ? "Hosted provider" : "Local model"}</p>
+              <p className="font-extrabold text-white">Local Workspace</p>
+              <p className="mt-1 text-ui font-semibold text-slate-400">{provider === "hosted" ? "Hosted provider" : "Local model"}</p>
             </div>
           </div>
-          <div className="mt-3 grid grid-cols-[92px_minmax(0,1fr)] gap-y-2 text-[12px]">
+          <div className="mt-3 grid grid-cols-[92px_minmax(0,1fr)] gap-y-2 text-ui">
             <span className="text-slate-400">Memory</span>
             <span className="truncate font-bold text-slate-200">{memoryEnabled ? memoryLabel : "Disabled"}</span>
             <span className="text-slate-400">Outputs</span>
@@ -207,7 +228,7 @@ function Sidebar({
 
 function MobileNav({ active, onNavigate }: { active: Surface; onNavigate: (s: Surface) => void }) {
   return (
-    <div className="sticky top-[64px] z-20 border-b border-slate-200 bg-white px-3 py-2 lg:hidden">
+    <div className="app-mobile-nav sticky top-[64px] z-20 border-b border-slate-200 bg-white px-3 py-2 lg:hidden">
       <div className="flex gap-2 overflow-x-auto report-scroll">
         {NAV.map((item) => (
           <button
@@ -215,8 +236,8 @@ function MobileNav({ active, onNavigate }: { active: Surface; onNavigate: (s: Su
             type="button"
             onClick={() => onNavigate(item.id)}
             aria-current={active === item.id ? "page" : undefined}
-            className={`h-9 flex-shrink-0 rounded-md px-3 text-[12px] font-black ${
-              active === item.id ? "bg-att-500 text-white" : "border border-slate-200 bg-white text-ink-soft"
+            className={`h-9 flex-shrink-0 rounded-md px-3 text-ui font-extrabold ${
+              active === item.id ? "bg-primary text-white" : "border border-slate-200 bg-white text-ink-soft"
             }`}
           >
             {item.label}
@@ -227,11 +248,24 @@ function MobileNav({ active, onNavigate }: { active: Surface; onNavigate: (s: Su
   );
 }
 
+function EmptyIllustration() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 96 72" className="mx-auto mb-4 h-16 w-20 text-att-300">
+      <path d="M16 54h64" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <rect x="22" y="18" width="52" height="32" rx="5" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M32 30h32M32 39h20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M38 14h20M48 14v-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="72" cy="18" r="5" fill="#eaf8fe" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
 function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
   return (
-    <section className="rounded-lg border border-dashed border-slate-300 bg-white px-5 py-8 text-center shadow-card">
-      <p className="text-[18px] font-black text-ink">{title}</p>
-      <p className="mx-auto mt-2 max-w-[620px] text-[14px] leading-6 text-ink-muted">{body}</p>
+    <section className="rounded-lg border border-slate-200 bg-white px-5 py-9 text-center shadow-card">
+      <EmptyIllustration />
+      <p className="text-section font-extrabold text-ink">{title}</p>
+      <p className="mx-auto mt-2 max-w-[620px] text-body leading-6 text-ink-muted">{body}</p>
       {action && <div className="mt-4">{action}</div>}
     </section>
   );
@@ -241,9 +275,9 @@ function SurfaceHeader({ eyebrow, title, body }: { eyebrow: string; title: strin
   return (
     <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0">
-        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-att-700">{eyebrow}</p>
-        <h1 className="mt-1 break-words text-[25px] font-black leading-tight text-ink">{title}</h1>
-        <p className="mt-2 max-w-[760px] text-[14px] leading-6 text-ink-soft">{body}</p>
+        <p className="text-caption font-extrabold uppercase tracking-[0.14em] text-primary-selected">{eyebrow}</p>
+        <h1 className="mt-1 break-words text-title font-extrabold leading-tight text-ink">{title}</h1>
+        <p className="mt-2 max-w-[760px] text-body leading-6 text-ink-soft">{body}</p>
       </div>
     </div>
   );
@@ -255,11 +289,11 @@ function RunStatusChip({ run }: { run: RunState }) {
   const cls = run.error
     ? "bg-danger-50 text-danger-700 ring-1 ring-danger-200"
     : run.report
-      ? "bg-att-50 text-att-700 ring-1 ring-att-100"
-      : "bg-att-100 text-att-800 ring-1 ring-att-200 pulse-ring";
+      ? "bg-primary-tint text-primary-selected ring-1 ring-primary-soft"
+      : "bg-primary-soft text-primary-selected ring-1 ring-primary-soft pulse-ring";
   return (
-    <span className={`inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-extrabold ${cls}`}>
-      {running && <span className="h-1.5 w-1.5 rounded-full bg-att-600" />}
+    <span className={`inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-caption font-extrabold ${cls}`}>
+      {running && <span className="h-1.5 w-1.5 rounded-full bg-primary-hover" />}
       {label}
     </span>
   );
@@ -279,42 +313,51 @@ function RunList({
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white shadow-card">
-      <div className="grid grid-cols-[minmax(0,1fr)_130px_140px_120px_170px] gap-3 border-b border-slate-200 px-4 py-3 text-[11px] font-extrabold uppercase tracking-[0.12em] text-ink-muted max-md:hidden">
-        <span>Incident</span>
-        <span>Method</span>
-        <span>Updated</span>
-        <span>Status</span>
-        <span>Actions</span>
-      </div>
-      <div className="divide-y divide-slate-100">
-        {runs.map((run) => {
-          const key = runKey(run);
-          return (
-          <div key={key} className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_130px_140px_120px_170px] md:items-center">
-            <div className="min-w-0">
-              <p className="break-words text-[13.5px] font-semibold text-ink">{run.report?.problem || `Run ${run.index + 1}`}</p>
-              <p className="mt-1 text-[12px] text-ink-muted">
-                {run.activity?.length ?? 0} stage events
-                <span className="md:hidden"> · {formatTimestamp(run.completed_at ?? run.updated_at ?? run.created_at)}</span>
-              </p>
-            </div>
-            <p className="text-[13px] font-bold text-ink-soft">{METHOD_SHORT[run.method]}</p>
-            <p className="text-[12px] font-semibold text-ink-muted max-md:hidden">{formatTimestamp(run.completed_at ?? run.updated_at ?? run.created_at)}</p>
-            <RunStatusChip run={run} />
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => onOpenRun(key)} className="h-9 rounded-md border border-slate-300 px-3 text-[12px] font-bold text-ink-soft hover:border-att-200 hover:text-att-700">
-                Live Run
-              </button>
-              {run.report && (
-                <button type="button" onClick={() => onOpenReport(key)} className="h-9 rounded-md bg-att-500 px-3 text-[12px] font-black text-white hover:bg-att-600">
-                  Report
-                </button>
-              )}
-            </div>
-          </div>
-        );
-        })}
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-card">
+      <div className="overflow-x-auto report-scroll">
+        <table className="w-full min-w-[780px] border-collapse">
+          <thead>
+            <tr className="border-b border-slate-200 text-left text-caption font-extrabold uppercase tracking-[0.12em] text-ink-muted">
+              <th className="px-4 py-3">Incident</th>
+              <th className="w-[130px] px-4 py-3">Method</th>
+              <th className="w-[150px] px-4 py-3">Updated</th>
+              <th className="w-[120px] px-4 py-3">Status</th>
+              <th className="w-[180px] px-4 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {runs.map((run) => {
+              const key = runKey(run);
+              return (
+                <tr key={key} className="transition hover:bg-primary-tint/40">
+                  <td className="px-4 py-4 align-middle">
+                    <p className="break-words text-body-sm font-semibold text-ink">{run.report?.problem || `Run ${run.index + 1}`}</p>
+                    <p className="mt-1 text-ui text-ink-muted">{run.activity?.length ?? 0} stage events</p>
+                  </td>
+                  <td className="px-4 py-4 align-middle text-body-sm font-bold text-ink-soft">{METHOD_SHORT[run.method]}</td>
+                  <td className="px-4 py-4 align-middle text-ui font-semibold tabular-nums text-ink-muted">
+                    {formatTimestamp(run.completed_at ?? run.updated_at ?? run.created_at)}
+                  </td>
+                  <td className="px-4 py-4 align-middle">
+                    <RunStatusChip run={run} />
+                  </td>
+                  <td className="px-4 py-4 align-middle">
+                    <div className="flex justify-end gap-2">
+                      <button type="button" onClick={() => onOpenRun(key)} className="h-9 rounded-md border border-slate-300 px-3 text-ui font-bold text-ink-soft hover:border-primary-soft hover:text-primary-selected">
+                        Live Run
+                      </button>
+                      {run.report && (
+                        <button type="button" onClick={() => onOpenReport(key)} className="h-9 rounded-md bg-primary px-3 text-ui font-extrabold text-white hover:bg-primary-hover">
+                          Report
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -338,14 +381,14 @@ function ReportsIndex({
           key={runKey(run)}
           type="button"
           onClick={() => onOpenReport(runKey(run))}
-          className="rounded-lg border border-slate-200 bg-white p-4 text-left shadow-card transition hover:border-att-200 hover:bg-att-50"
+          className="rounded-lg border border-slate-200 bg-white p-4 text-left shadow-card transition hover:border-primary-soft hover:bg-primary-tint"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="rounded-md bg-att-50 px-2 py-1 text-[11px] font-black text-att-700">{METHOD_SHORT[run.method]}</span>
-            <span className="rounded-md bg-att-50 px-2 py-1 text-[11px] font-black capitalize text-att-800">{run.report?.confidence}</span>
+            <span className="rounded-md bg-primary-tint px-2 py-1 text-caption font-extrabold text-primary-selected">{METHOD_SHORT[run.method]}</span>
+            <span className="rounded-md bg-primary-tint px-2 py-1 text-caption font-extrabold capitalize text-primary-selected">{run.report?.confidence}</span>
           </div>
-          <p className="mt-3 break-words text-[15px] font-black leading-5 text-ink">{run.report?.problem}</p>
-          <p className="mt-2 line-clamp-2 break-words text-[13px] leading-5 text-ink-muted">{run.report?.root_cause}</p>
+          <p className="mt-3 break-words text-lead font-extrabold leading-5 text-ink">{run.report?.problem}</p>
+          <p className="mt-2 line-clamp-2 break-words text-body-sm leading-5 text-ink-muted">{run.report?.root_cause}</p>
         </button>
       ))}
     </div>
@@ -359,15 +402,15 @@ function ExportButton({ href, label, detail, download }: { href?: string; label:
       target={download ? undefined : "_blank"}
       rel={download ? undefined : "noreferrer"}
       download={download}
-      className="rounded-lg border border-slate-200 bg-white p-4 shadow-card transition hover:border-att-200 hover:bg-att-50"
+      className="rounded-lg border border-slate-200 bg-white p-4 shadow-card transition hover:border-primary-soft hover:bg-primary-tint"
     >
-      <p className="text-[14px] font-black text-ink">{label}</p>
-      <p className="mt-1 text-[12.5px] leading-5 text-ink-muted">{detail}</p>
+      <p className="text-body font-extrabold text-ink">{label}</p>
+      <p className="mt-1 text-ui leading-5 text-ink-muted">{detail}</p>
     </a>
   ) : (
     <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 opacity-70">
-      <p className="text-[14px] font-black text-ink">{label}</p>
-      <p className="mt-1 text-[12.5px] leading-5 text-ink-muted">{detail}</p>
+      <p className="text-body font-extrabold text-ink">{label}</p>
+      <p className="mt-1 text-ui leading-5 text-ink-muted">{detail}</p>
     </div>
   );
 }
@@ -380,11 +423,11 @@ function ExportsView({ runs }: { runs: RunState[] | null }) {
   return (
     <div className="space-y-4">
       {ready.map((run) => (
-        <section key={run.index} className="rounded-lg border border-slate-200 bg-white p-4 shadow-card">
+        <section key={runKey(run)} className="rounded-lg border border-slate-200 bg-white p-4 shadow-card">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[15px] font-black text-ink">{METHOD_SHORT[run.method]}</p>
-              <p className="mt-1 break-words text-[13px] text-ink-muted">{run.report?.problem}</p>
+              <p className="text-lead font-extrabold text-ink">{METHOD_SHORT[run.method]}</p>
+              <p className="mt-1 break-words text-body-sm text-ink-muted">{run.report?.problem}</p>
             </div>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -406,8 +449,8 @@ function AuditLogsView({ runs }: { runs: RunState[] | null }) {
         <ActivityTrace activity={activity} />
       </div>
       <aside className="rounded-lg border border-slate-200 bg-white p-5 shadow-card">
-        <h2 className="text-[15px] font-black text-ink">Local audit log</h2>
-        <p className="mt-2 text-[13px] leading-6 text-ink-muted">
+        <h2 className="text-lead font-extrabold text-ink">Local audit log</h2>
+        <p className="mt-2 text-body-sm leading-6 text-ink-muted">
           The backend appends a local JSONL audit record for each web run. This UI shows live stage activity for the current session.
         </p>
       </aside>
@@ -431,7 +474,7 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-card">
-        <h2 className="text-[15px] font-black text-ink">Runtime Status</h2>
+        <h2 className="text-lead font-extrabold text-ink">Runtime Status</h2>
         <div className="mt-4 space-y-3">
           {[
             ["Provider", uiMeta?.provider || "checking"],
@@ -440,19 +483,19 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
             ["Memory", uiMeta?.memory?.enabled ? `${uiMeta.memory.record_count ?? "checking"} records` : "Disabled"],
             ["Outputs", "Local artifacts"],
           ].map(([label, value]) => (
-            <div key={label} className="grid grid-cols-[128px_minmax(0,1fr)] gap-3 text-[13px]">
+            <div key={label} className="grid grid-cols-[128px_minmax(0,1fr)] gap-3 text-body-sm">
               <span className="font-bold text-ink-muted">{label}</span>
-              <span className="break-words font-black text-ink">{value}</span>
+              <span className="break-words font-extrabold text-ink">{value}</span>
             </div>
           ))}
         </div>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-card">
-        <h2 className="text-[15px] font-black text-ink">Features</h2>
+        <h2 className="text-lead font-extrabold text-ink">Features</h2>
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           {safe.map((item) => (
-            <div key={item} className="rounded-md border border-att-100 bg-att-50 px-3 py-2 text-[12px] font-bold text-att-800">{item}</div>
+            <div key={item} className="rounded-md border border-primary-soft bg-primary-tint px-3 py-2 text-ui font-bold text-primary-selected">{item}</div>
           ))}
         </div>
       </section>
@@ -471,7 +514,7 @@ function confidenceRank(report: RCAReport) {
 function itemBadge(item: string, shared: Set<string>) {
   const same = shared.has(normalize(item));
   return (
-    <span className={`ml-2 rounded-md px-2 py-0.5 text-[10.5px] font-extrabold ${same ? "bg-att-50 text-att-700" : "bg-warn-50 text-warn-700"}`}>
+    <span className={`ml-2 rounded-md px-2 py-0.5 text-caption font-extrabold ${same ? "bg-primary-tint text-primary-selected" : "bg-warn-50 text-warn-700"}`}>
       {same ? "Shared" : "Differs"}
     </span>
   );
@@ -484,30 +527,30 @@ function MethodCompareCard({ run, shared }: { run: RunState; shared: Set<string>
   return (
     <section className="rounded-lg border border-slate-200 bg-white shadow-card">
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-        <h2 className="text-[17px] font-black text-att-700">{METHOD_SHORT[run.method]}</h2>
-        <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-black capitalize text-ink-muted">{report.confidence}</span>
+        <h2 className="text-section font-extrabold text-primary-selected">{METHOD_SHORT[run.method]}</h2>
+        <span className="rounded-md bg-slate-100 px-2 py-1 text-caption font-extrabold capitalize text-ink-muted">{report.confidence}</span>
       </div>
       <div className="space-y-4 p-4">
         <div>
-          <p className="text-[12px] font-black uppercase tracking-[0.12em] text-ink-muted">Root Cause</p>
-          <p className="mt-1 break-words text-[14px] font-bold leading-6 text-ink">{report.root_cause}</p>
+          <p className="text-ui font-extrabold uppercase tracking-[0.12em] text-ink-muted">Root Cause</p>
+          <p className="mt-1 break-words text-body font-bold leading-6 text-ink">{report.root_cause}</p>
         </div>
         <div>
-          <p className="text-[12px] font-black uppercase tracking-[0.12em] text-ink-muted">Contributing Factors</p>
+          <p className="text-ui font-extrabold uppercase tracking-[0.12em] text-ink-muted">Contributing Factors</p>
           <ul className="mt-2 space-y-2">
             {factors.map((item) => (
-              <li key={item} className="text-[13px] leading-5 text-ink-soft">
-                <span className="mr-2 text-att-700">-</span>{item}{itemBadge(item, shared)}
+              <li key={item} className="text-body-sm leading-5 text-ink-soft">
+                <span className="mr-2 text-primary-selected">-</span>{item}{itemBadge(item, shared)}
               </li>
             ))}
           </ul>
         </div>
         <div>
-          <p className="text-[12px] font-black uppercase tracking-[0.12em] text-ink-muted">Recommendations</p>
+          <p className="text-ui font-extrabold uppercase tracking-[0.12em] text-ink-muted">Recommendations</p>
           <ul className="mt-2 space-y-2">
             {recs.map((item) => (
-              <li key={item} className="text-[13px] leading-5 text-ink-soft">
-                <span className="mr-2 inline-flex align-middle text-att-700"><CheckIcon className="h-3.5 w-3.5" /></span>{item}{itemBadge(item, shared)}
+              <li key={item} className="text-body-sm leading-5 text-ink-soft">
+                <span className="mr-2 inline-flex align-middle text-primary-selected"><CheckIcon className="h-3.5 w-3.5" /></span>{item}{itemBadge(item, shared)}
               </li>
             ))}
           </ul>
@@ -520,7 +563,7 @@ function MethodCompareCard({ run, shared }: { run: RunState; shared: Set<string>
 function compareOptionLabel(run: RunState) {
   const problem = run.report?.problem || `Run ${run.index + 1}`;
   const short = problem.length > 72 ? `${problem.slice(0, 69)}...` : problem;
-  return `${METHOD_SHORT[run.method]} · ${short}`;
+  return `${METHOD_SHORT[run.method]} \u00b7 ${short}`;
 }
 
 function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
@@ -557,7 +600,7 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
     <div className="space-y-5">
       <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-card md:grid-cols-2">
         <div>
-          <label className="mb-1.5 block text-[12px] font-extrabold uppercase tracking-[0.12em] text-ink-muted" htmlFor="compare-a">
+          <label className="mb-1.5 block text-ui font-extrabold uppercase tracking-[0.12em] text-ink-muted" htmlFor="compare-a">
             Compare A
           </label>
           <select
@@ -570,7 +613,7 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
                 setSelectedBKey(readyKeys.find((key) => key !== next) ?? "");
               }
             }}
-            className="h-11 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-[13px] font-semibold text-ink-soft"
+            className="h-11 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-body-sm font-semibold text-ink-soft"
           >
             {ready.map((run) => (
               <option key={runKey(run)} value={runKey(run)}>{compareOptionLabel(run)}</option>
@@ -578,14 +621,14 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
           </select>
         </div>
         <div>
-          <label className="mb-1.5 block text-[12px] font-extrabold uppercase tracking-[0.12em] text-ink-muted" htmlFor="compare-b">
+          <label className="mb-1.5 block text-ui font-extrabold uppercase tracking-[0.12em] text-ink-muted" htmlFor="compare-b">
             Compare B
           </label>
           <select
             id="compare-b"
             value={runKey(b)}
             onChange={(event) => setSelectedBKey(event.target.value)}
-            className="h-11 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-[13px] font-semibold text-ink-soft"
+            className="h-11 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-body-sm font-semibold text-ink-soft"
           >
             {ready.map((run) => (
               <option key={runKey(run)} value={runKey(run)} disabled={runKey(run) === runKey(a)}>
@@ -598,24 +641,24 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
 
       <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-card md:grid-cols-3">
         <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-att-50 text-[13px] font-black text-att-700">{shared.size}</span>
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-primary-tint text-body-sm font-extrabold text-primary-selected">{shared.size}</span>
           <div>
-            <p className="text-[13px] font-black text-ink">Shared findings</p>
-            <p className="text-[12px] text-ink-muted">Exact matches across factors and fixes</p>
+            <p className="text-body-sm font-extrabold text-ink">Shared findings</p>
+            <p className="text-ui text-ink-muted">Exact matches across factors and fixes</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-warn-50 text-[13px] font-black text-warn-700">{rootSame ? 0 : 1}</span>
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-warn-50 text-body-sm font-extrabold text-warn-700">{rootSame ? 0 : 1}</span>
           <div>
-            <p className="text-[13px] font-black text-ink">Root-cause difference</p>
-            <p className="text-[12px] text-ink-muted">{rootSame ? "Root cause text matches" : "Root cause text differs"}</p>
+            <p className="text-body-sm font-extrabold text-ink">Root-cause difference</p>
+            <p className="text-ui text-ink-muted">{rootSame ? "Root cause text matches" : "Root cause text differs"}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-att-50 text-[13px] font-black text-att-700">D</span>
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-primary-tint text-body-sm font-extrabold text-primary-selected">D</span>
           <div>
-            <p className="text-[13px] font-black text-ink">Deterministic synthesis</p>
-            <p className="text-[12px] text-ink-muted">No separate model call used here</p>
+            <p className="text-body-sm font-extrabold text-ink">Deterministic synthesis</p>
+            <p className="text-ui text-ink-muted">No separate model call used here</p>
           </div>
         </div>
       </div>
@@ -625,24 +668,24 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
         <MethodCompareCard run={b} shared={shared} />
       </div>
 
-      <section className="rounded-lg border border-att-200 bg-att-50 p-5">
-        <h2 className="text-[16px] font-black text-att-900">Recommended Final Interpretation</h2>
+      <section className="rounded-lg border border-primary-soft bg-primary-tint p-5">
+        <h2 className="text-lead font-extrabold text-ink">Recommended Final Interpretation</h2>
         <div className="mt-4 grid gap-4 lg:grid-cols-3">
-          <div className="rounded-lg border border-att-100 bg-white p-4">
-            <p className="text-[12px] font-black uppercase tracking-[0.12em] text-att-700">Shared findings</p>
-            <p className="mt-2 text-[13px] leading-5 text-ink-soft">
+          <div className="rounded-lg border border-primary-soft bg-white p-4">
+            <p className="text-ui font-extrabold uppercase tracking-[0.12em] text-primary-selected">Shared findings</p>
+            <p className="mt-2 text-body-sm leading-5 text-ink-soft">
               {shared.size > 0 ? `${shared.size} exact shared factor or recommendation label found.` : "No exact shared factor or recommendation labels were found."}
             </p>
           </div>
-          <div className="rounded-lg border border-att-100 bg-white p-4">
-            <p className="text-[12px] font-black uppercase tracking-[0.12em] text-att-700">Differences</p>
-            <p className="mt-2 text-[13px] leading-5 text-ink-soft">
+          <div className="rounded-lg border border-primary-soft bg-white p-4">
+            <p className="text-ui font-extrabold uppercase tracking-[0.12em] text-primary-selected">Differences</p>
+            <p className="mt-2 text-body-sm leading-5 text-ink-soft">
               {rootSame ? "Both methods returned the same root-cause text." : "The methods returned different root-cause wording and should be reconciled against evidence."}
             </p>
           </div>
-          <div className="rounded-lg border border-att-100 bg-white p-4">
-            <p className="text-[12px] font-black uppercase tracking-[0.12em] text-att-700">Interpretation</p>
-            <p className="mt-2 text-[13px] leading-5 text-ink-soft">
+          <div className="rounded-lg border border-primary-soft bg-white p-4">
+            <p className="text-ui font-extrabold uppercase tracking-[0.12em] text-primary-selected">Interpretation</p>
+            <p className="mt-2 text-body-sm leading-5 text-ink-soft">
               Use {METHOD_SHORT[best.method]} as the primary draft because it has {best.report?.confidence} confidence, and review {METHOD_SHORT[other.method]} differences as evidence prompts.
             </p>
           </div>
@@ -655,7 +698,7 @@ function CompareMethodsView({ runs }: { runs: RunState[] | null }) {
 type CompletionToast = { key: string; method: Method; problem?: string };
 
 export default function App() {
-  const initialRoute = typeof window !== "undefined" ? parseRouteHash() : { surface: "new" as Surface };
+  const initialRoute = typeof window !== "undefined" ? parseRouteHash() : { surface: "new" as Surface, runKey: null, matched: false };
   const [runs, setRuns] = useState<RunState[] | null>(null);
   const [runHistory, setRunHistory] = useState<RunState[]>(loadStoredRunHistory);
   const [busy, setBusy] = useState(false);
@@ -681,6 +724,7 @@ export default function App() {
   useEffect(() => {
     const onHashChange = () => {
       const route = parseRouteHash();
+      if (!route.matched) return; // ignore stray/in-page anchors instead of redirecting
       setActiveSurface(route.surface);
       if (route.runKey !== undefined) setSelectedRunKey(route.runKey);
     };
@@ -955,7 +999,7 @@ export default function App() {
           <EmptyState
             title="No live run"
             body="Start a new analysis to see the live stage activity."
-            action={<button type="button" onClick={() => navigate("new")} className="h-10 rounded-md bg-att-600 px-4 text-[13px] font-black text-white">New Analysis</button>}
+            action={<button type="button" onClick={() => navigate("new")} className="h-10 rounded-md bg-primary-hover px-4 text-body-sm font-extrabold text-white">New Analysis</button>}
           />
         );
       }
@@ -982,7 +1026,7 @@ export default function App() {
           <EmptyState
             title="No report ready"
             body="A completed RCA report will appear here after generation and artifact rendering."
-            action={<button type="button" onClick={() => navigate(runs?.length ? "run" : "new")} className="h-10 rounded-md bg-att-600 px-4 text-[13px] font-black text-white">{runs?.length ? "View Live Run" : "New Analysis"}</button>}
+            action={<button type="button" onClick={() => navigate(runs?.length ? "run" : "new")} className="h-10 rounded-md bg-primary-hover px-4 text-body-sm font-extrabold text-white">{runs?.length ? "View Live Run" : "New Analysis"}</button>}
           />
         );
       }
@@ -1005,6 +1049,10 @@ export default function App() {
     return <SettingsView uiMeta={uiMeta} />;
   }, [activeSurface, allRuns, busy, lastPayload, memoryMeta, runs, selectedReportRun, startedAt, uiMeta, validationEnabled, validatorModel, writerModel]);
 
+  useEffect(() => {
+    document.title = `${DOCUMENT_TITLES[activeSurface]} \u2014 RCA Assistant`;
+  }, [activeSurface]);
+
   const header = {
     recent: ["Dashboard", "Recent Runs", "Current-session runs and generated RCA artifacts."],
     new: ["New Analysis", "Create RCA Draft", "Start a local, guarded root-cause analysis."],
@@ -1018,7 +1066,7 @@ export default function App() {
   }[activeSurface];
 
   return (
-    <div className="min-h-full bg-[linear-gradient(135deg,#ffffff_0%,#eaf8fe_48%,#f5fbfe_100%)]">
+    <div className="min-h-full bg-slate-50">
       <Sidebar
         active={activeSurface}
         onNavigate={navigate}
@@ -1030,22 +1078,24 @@ export default function App() {
         <TopBar uiMeta={uiMeta} onAuditLogs={() => navigate("audit")} onSettings={() => navigate("settings")} />
         <MobileNav active={activeSurface} onNavigate={navigate} />
         <main className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6">
-          {activeSurface !== "new" && <SurfaceHeader eyebrow={header[0]} title={header[1]} body={header[2]} />}
-          {surfaceContent}
+          <div key={activeSurface} className="surface-enter">
+            {activeSurface !== "new" && <SurfaceHeader eyebrow={header[0]} title={header[1]} body={header[2]} />}
+            {surfaceContent}
+          </div>
         </main>
-        <footer className="border-t border-att-100 bg-white px-4 py-4 text-center text-[11.5px] font-semibold text-ink-muted sm:px-6">
+        <footer className="app-footer border-t border-primary-soft bg-white px-4 py-4 text-center text-ui font-semibold text-ink-muted sm:px-6">
           AI-generated RCA drafts require validation against logs, metrics, and deployment timelines before action.
         </footer>
       </div>
       {completionToast && (
-        <div className="fixed bottom-4 right-4 z-50 w-[min(360px,calc(100vw-2rem))] rounded-lg border border-att-200 bg-white p-4 shadow-hero" role="status" aria-live="polite">
+        <div className="toast-enter fixed bottom-4 right-4 z-50 w-[min(360px,calc(100vw-2rem))] rounded-lg border border-primary-soft bg-white p-4 shadow-hero" role="status" aria-live="polite">
           <div className="flex items-start gap-3">
-            <span className="mt-0.5 grid h-8 w-8 flex-shrink-0 place-items-center rounded-md bg-att-600 text-white">
+            <span className="mt-0.5 grid h-8 w-8 flex-shrink-0 place-items-center rounded-md bg-primary-hover text-white">
               <CheckIcon className="h-4 w-4" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-black text-ink">Report ready</p>
-              <p className="mt-1 line-clamp-2 text-[12.5px] leading-5 text-ink-soft">
+              <p className="text-body-sm font-extrabold text-ink">Report ready</p>
+              <p className="mt-1 line-clamp-2 text-ui leading-5 text-ink-soft">
                 {METHOD_SHORT[completionToast.method]} is complete{completionToast.problem ? `: ${completionToast.problem}` : "."}
               </p>
               <div className="mt-3 flex gap-2">
@@ -1055,14 +1105,14 @@ export default function App() {
                     navigate("report", completionToast.key);
                     dismissToast(completionToast.key);
                   }}
-                  className="h-9 rounded-md bg-att-600 px-3 text-[12px] font-black text-white hover:bg-att-700"
+                  className="h-9 rounded-md bg-primary-hover px-3 text-ui font-extrabold text-white hover:bg-primary-selected"
                 >
                   Open
                 </button>
                 <button
                   type="button"
                   onClick={() => dismissToast(completionToast.key)}
-                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-[12px] font-bold text-ink-soft hover:border-att-200 hover:text-att-700"
+                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-ui font-bold text-ink-soft hover:border-primary-soft hover:text-primary-selected"
                 >
                   Dismiss
                 </button>

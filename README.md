@@ -18,13 +18,14 @@ JSONL audit trail.
 - Shared RCA engine for the web UI, FastAPI API, CLI, and MCP server.
 - Three RCA methods: 5 Whys, Fishbone, and simplified Fault Tree.
 - OpenAI-compatible provider abstraction for local Ollama or hosted endpoints.
-- Default local model configuration using `qwen3.5:9b` for generation,
-  `qwen3.5:4b` as a faster fallback option, and `llama3.2:latest` for
-  validation or evaluation.
+- Default local model configuration using `qwen3:8b` for generation and
+  `llama3.2:latest` for validation or evaluation.
 - Excel-backed past RCA memory with local similarity retrieval and optional
   write-back.
 - Deterministic critique checks for shallow why chains, symptom-as-cause
   issues, vague root causes, blame language, and method consistency.
+- Provider failure hardening that surfaces crashed/OOM-killed model servers and
+  no-answer model responses instead of masking them as generic fallback RCAs.
 - Optional reviewer-model validation with confidence and validation notes.
 - Local PDF, HTML, internal JSON artifacts, and audit logs under `OUTPUT_DIR`.
 - Docker Compose setup with FastAPI, Nginx-served frontend, and Ollama.
@@ -84,8 +85,7 @@ pip install -r requirements.txt
 Install and start Ollama, then pull the recommended local models:
 
 ```bash
-ollama pull qwen3.5:9b
-ollama pull qwen3.5:4b
+ollama pull qwen3:8b
 ollama pull llama3.2:latest
 ```
 
@@ -94,7 +94,7 @@ Create a `.env` file if you want to override defaults:
 ```text
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434/v1
-RCA_MODEL=qwen3.5:9b
+RCA_MODEL=qwen3:8b
 RCA_PROMPT_VERSION=v3
 RCA_VALIDATION_ENABLED=true
 VALIDATION_MODEL=llama3.2:latest
@@ -146,8 +146,9 @@ curl -X POST http://127.0.0.1:8000/rca \
 
 ## Frontend Development
 
-The production web bundle is served from `frontend/dist`. To rebuild or run the
-frontend in development mode:
+The production web bundle is generated into `frontend/dist` and served by
+FastAPI or the Nginx frontend image. `frontend/dist/` is build output and is
+ignored in Git. To rebuild or run the frontend in development mode:
 
 ```bash
 cd frontend
@@ -176,8 +177,7 @@ Services:
 Pull models into the Ollama container on first use:
 
 ```bash
-docker compose exec ollama ollama pull qwen3.5:9b
-docker compose exec ollama ollama pull qwen3.5:4b
+docker compose exec ollama ollama pull qwen3:8b
 docker compose exec ollama ollama pull llama3.2:latest
 ```
 
@@ -239,7 +239,8 @@ Common environment variables:
 | --- | --- | --- |
 | `LLM_PROVIDER` | `ollama` or `hosted` | `ollama` |
 | `OLLAMA_BASE_URL` | Local Ollama OpenAI-compatible endpoint | `http://localhost:11434/v1` |
-| `RCA_MODEL` | Generation model | `qwen3.5:9b` |
+| `RCA_MODEL` | Generation model | `qwen3:8b` |
+| `RCA_MAX_OUTPUT_TOKENS` | Generation token budget | `4096` |
 | `VALIDATION_MODEL` | Optional reviewer model | unset locally, `llama3.2:latest` in Compose |
 | `RCA_VALIDATION_ENABLED` | Enable reviewer validation | `true` |
 | `OUTPUT_DIR` | Artifact and audit output directory | `./outputs` |
@@ -281,8 +282,14 @@ python eval/run_eval.py
 | Anti-blame cap | Unresolved blame language forces low confidence. |
 | Restricted writes | Artifacts must remain inside `OUTPUT_DIR`. |
 | Structured errors | Clients receive safe error envelopes, not stack traces. |
+| Provider crash surfacing | 5xx/OOM signatures such as `signal: killed` map to `provider_unreachable`. |
+| No-answer surfacing | Empty/truncated reasoning responses surface as `model_output_invalid`. |
 | Audit log | Each invocation writes a JSONL audit record with hashed problem text. |
 | Evidence handling | Past RCA memory is treated as supporting evidence, not ground truth. |
+
+Authentication is not currently implemented. A proposed API-key-only change was
+not adopted because it protected only `POST /rca` and did not cover the web job
+routes that drive the main UI.
 
 ## Project Structure
 

@@ -173,9 +173,18 @@ class RCAReport(BaseModel):
 
 
 class RCAGenerationReport(BaseModel):
-    """Lean schema requested from the model before engine metadata is attached."""
+    """Lean schema requested from the model before engine metadata is attached.
 
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    Uses ``extra="ignore"`` (not "forbid"): small local models such as
+    qwen3.5:9b routinely emit harmless extra keys (e.g. ``why_number``,
+    ``cause``, or a wrapping ``report`` object). Forbidding extras made
+    Instructor reject otherwise-usable drafts and burn its retry budget, so
+    every run fell back to the deterministic conservative draft. We ignore
+    unknown keys here; ``to_rca_report`` re-validates against the strict
+    ``RCAReport`` schema, which still enforces the real content contract.
+    """
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
     problem: str = Field(min_length=10, description="Problem statement being analyzed.")
     summary: str = Field(

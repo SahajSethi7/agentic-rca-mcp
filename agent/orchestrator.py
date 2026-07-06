@@ -94,7 +94,7 @@ class RCAAgent:
         critique: CritiqueResult,
     ) -> RCAReport:
         revised = self.provider.create_structured(
-            build_revise_messages(rca_input, report, critique),
+            build_revise_messages(rca_input, report, critique, model=self.provider.model),
             RCAGenerationReport,
         ).to_rca_report()
         from methods import get_method

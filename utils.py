@@ -108,6 +108,31 @@ def classify_exception(exc: Exception) -> StructuredError:
             "validation, even after bounded retries."
         )
 
+    # A crashed / OOM-killed model server (e.g. Ollama killing llama-server) can
+    # arrive wrapped in a retry exception whose *name* looks like bad output.
+    # Detect the server-crash / 5xx signature in the message so it surfaces as an
+    # infrastructure error instead of silently falling back to a conservative
+    # draft. This override must run last so it wins over the mappings above.
+    lowered = f"{name} {exc}".lower()
+    server_crashed = (
+        "process has terminated" in lowered
+        or "signal: killed" in lowered
+        or "llama-server" in lowered
+        or "internalservererror" in lowered
+        or "error code: 500" in lowered
+        or "error code: 502" in lowered
+        or "error code: 503" in lowered
+        or (isinstance(status_code, int) and 500 <= status_code < 600)
+    )
+    if server_crashed:
+        error_type = "provider_unreachable"
+        message = (
+            "The model server crashed or was killed before returning a result - "
+            "this usually means it ran out of memory. Check that the model fits in "
+            "available RAM/VRAM (or use a smaller model) and that the model server "
+            "is healthy."
+        )
+
     return StructuredError(
         error_type=error_type,
         message=message,

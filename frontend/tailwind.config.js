@@ -7,6 +7,17 @@ export default {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
       },
+      fontSize: {
+        micro: ['0.625rem', { lineHeight: '0.875rem' }],
+        caption: ['0.6875rem', { lineHeight: '0.95rem' }],
+        ui: ['0.75rem', { lineHeight: '1rem' }],
+        'body-sm': ['0.8125rem', { lineHeight: '1.15rem' }],
+        body: ['0.875rem', { lineHeight: '1.35rem' }],
+        lead: ['0.9375rem', { lineHeight: '1.45rem' }],
+        section: ['1.0625rem', { lineHeight: '1.45rem' }],
+        title: ['1.5rem', { lineHeight: '1.9rem' }],
+        display: ['1.75rem', { lineHeight: '2.15rem' }],
+      },
       colors: {
         att: {
           50: '#eaf8fe',
@@ -21,6 +32,13 @@ export default {
           900: '#061a2f',
           black: '#000000',
           white: '#ffffff',
+        },
+        primary: {
+          DEFAULT: '#009fdb',
+          hover: '#0073a8',
+          selected: '#005a8f',
+          tint: '#eaf8fe',
+          soft: '#d3f0fc',
         },
         ink: { DEFAULT: '#0b1720', soft: '#3d5265', muted: '#687789' },
         command: { DEFAULT: '#061a2f' },
@@ -45,7 +63,7 @@ export default {
         },
       },
       boxShadow: {
-        card: '0 1px 2px rgba(6,26,47,.06), 0 16px 40px -28px rgba(0,90,143,.38)',
+        card: '0 1px 2px rgba(6,26,47,.06)',
         hero: '0 1px 2px rgba(6,26,47,.08), 0 22px 48px -26px rgba(0,90,143,.48)',
       },
     },

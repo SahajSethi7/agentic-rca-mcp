@@ -101,11 +101,28 @@ PROMPTS = {
 DEFAULT_PROMPT_VERSION = "v3"
 
 
+def _maybe_suppress_thinking(content: str, model: str | None) -> str:
+    """Append Qwen3's ``/no_think`` soft switch for thinking-capable Qwen3 models.
+
+    Qwen3 models run a reasoning pass by default. Ollama's OpenAI-compatible
+    ``/v1`` endpoint silently drops the ``think`` request field, so the only
+    reliable way to disable thinking there is the ``/no_think`` soft switch in
+    the prompt, which the official Qwen3 chat template honors. Without it, the
+    model spends its whole token budget reasoning and returns empty content,
+    which fails structured output and falls back to a conservative draft.
+    Non-Qwen3 models (llama3.2, qwen2.5, hosted models) are unaffected.
+    """
+    if model and model.lower().startswith("qwen3"):
+        return f"{content}\n\n/no_think"
+    return content
+
+
 def build_messages(
     rca_input: RCAInput,
     *,
     prompt_version: str = DEFAULT_PROMPT_VERSION,
     strict_retry: bool = False,
+    model: str | None = None,
 ) -> list[dict[str, str]]:
     """Build chat messages for a versioned, method-aware RCA prompt."""
     prompt = PROMPTS[prompt_version]
@@ -134,16 +151,14 @@ def build_messages(
             "Replace generic root causes with the exact failed mechanism or control."
         )
 
+    user_message = (
+        "Causal depth pattern: symptom -> immediate failure -> missed detection -> "
+        "specific failed control/mechanism -> durable root cause.\n\n"
+        f"{user_content}"
+    )
     return [
         {"role": "system", "content": system_content},
-        {
-            "role": "user",
-            "content": (
-                "Causal depth pattern: symptom -> immediate failure -> missed detection -> "
-                "specific failed control/mechanism -> durable root cause.\n\n"
-                f"{user_content}"
-            ),
-        },
+        {"role": "user", "content": _maybe_suppress_thinking(user_message, model)},
     ]
 
 
@@ -151,6 +166,7 @@ def build_revise_messages(
     rca_input: RCAInput,
     report: RCAReport,
     critique: CritiqueResult,
+    model: str | None = None,
 ) -> list[dict[str, str]]:
     """Build the revise prompt: original input + current report + critique findings."""
     findings = "\n".join(
@@ -162,7 +178,7 @@ def build_revise_messages(
     if hint:
         system_content = f"{system_content}\n\n{hint}"
 
-    return [
+    messages = [
         {"role": "system", "content": system_content},
         {
             "role": "user",
@@ -184,6 +200,8 @@ def build_revise_messages(
             ),
         },
     ]
+    messages[1]["content"] = _maybe_suppress_thinking(messages[1]["content"], model)
+    return messages
 
 
 def build_validation_messages(report: RCAReport) -> list[dict[str, str]]:
