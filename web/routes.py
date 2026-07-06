@@ -176,14 +176,6 @@ def view_html(job_id: str, index: int):
     return HTMLResponse(Path(result).read_text(encoding="utf-8"))
 
 
-@router.get("/ui/jobs/{job_id}/runs/{index}/report.json")
-def view_json(job_id: str, index: int):
-    result = _run_artifact(job_id, index, "json")
-    if isinstance(result, JSONResponse):
-        return result
-    return FileResponse(result, media_type="application/json", filename="RCA_Assistant.json")
-
-
 @router.get("/ui/jobs/{job_id}/runs/{index}/matching-past-rcas.xlsx")
 def download_matching_past_rcas(job_id: str, index: int):
     result = _run_artifact(job_id, index, "xlsx")

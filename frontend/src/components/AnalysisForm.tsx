@@ -110,7 +110,7 @@ export default function AnalysisForm({
               <p className="text-[11px] font-black uppercase tracking-[0.14em] text-att-700">New Analysis</p>
               <h1 className="mt-1 text-[25px] font-black leading-tight tracking-tight text-ink">Create RCA Draft</h1>
               <p className="mt-2 max-w-[760px] text-[14px] leading-6 text-ink-soft">
-                Describe the incident, choose an RCA method, and generate local JSON, HTML, and PDF artifacts.
+                Describe the incident, choose an RCA method, and generate local HTML, and PDF artifacts.
               </p>
             </div>
             <div className="rounded-md border border-att-100 bg-att-50 px-3 py-2 text-[12px] font-bold text-att-700">
@@ -237,7 +237,7 @@ export default function AnalysisForm({
           <div className="border-t border-slate-200 pt-4">
             <p className="mb-3 text-[12px] font-black uppercase tracking-[0.12em] text-ink-muted">Expected outputs</p>
             <div className="space-y-2">
-              {["JSON structured report", "HTML web report", "PDF printable report", "Matching past RCA Excel workbook"].map((item) => (
+              {["HTML web report", "PDF printable report", "Matching past RCA Excel workbook"].map((item) => (
                 <div key={item} className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
                   <span className="grid h-5 w-5 place-items-center rounded-full bg-att-100 text-att-700"><CheckIcon className="h-3.5 w-3.5" /></span>
                   <span className="text-[12.5px] font-bold text-ink-soft">{item}</span>

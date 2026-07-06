@@ -214,7 +214,6 @@ class JobManager:
                     "substeps": [
                         "Preparing PDF report.",
                         "Preparing standalone HTML report.",
-                        "Preparing JSON payload for UI/download.",
                         "Preparing matching past RCA workbook.",
                     ],
                 }
@@ -293,7 +292,6 @@ class JobManager:
                     "report": report.model_dump(mode="json"),
                     "pdf_url": f"{base}/report.pdf",
                     "html_url": f"{base}/report.html",
-                    "json_url": f"{base}/report.json",
                     "memory_xlsx_url": f"{base}/matching-past-rcas.xlsx",
                 }
             )

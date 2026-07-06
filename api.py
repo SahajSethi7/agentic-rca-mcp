@@ -33,6 +33,32 @@ from utils import (
 
 logger = logging.getLogger("agentic_rca.api")
 
+
+from fastapi import Security, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import os
+
+# Read the API key from environment (set in .env)
+_bearer = HTTPBearer(auto_error=True)
+_EXPECTED_KEY = os.getenv("API_KEY", "")
+
+def require_api_key(
+    credentials: HTTPAuthorizationCredentials = Security(_bearer),
+) -> str:
+    """Dependency: call this to protect any route with Bearer token auth."""
+    if not _EXPECTED_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="API_KEY is not configured on the server.",
+        )
+    if credentials.credentials != _EXPECTED_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key.",
+        )
+    return credentials.credentials
+
+
 app = FastAPI(title="RCA Assistant API")
 
 # Phase 6: mount the web UI job/streaming routes on this same app, so the
@@ -124,7 +150,7 @@ def health() -> dict[str, str]:
 
 
 @app.post("/rca", response_model=RCAReport)
-def create_rca(payload: RCAInput) -> RCAReport:
+def create_rca(payload: RCAInput, _: str = Security(require_api_key)) -> RCAReport:
     settings = get_settings()
     agent = RCAAgent(settings=settings)
     try:
