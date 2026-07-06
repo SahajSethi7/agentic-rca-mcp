@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
-import type { ActivityItem, MemoryMeta, Method, RCAReport, RunState, RunUrls, SSEvent, UiMeta } from "./types";
+import type { ActivityItem, MemoryMeta, Method, ModelStatus, RCAReport, RunState, RunUrls, SSEvent, UiMeta } from "./types";
 import { METHOD_SHORT } from "./types";
-import { downloadArtifact, fetchMeta, openArtifact, setAccessTokenGetter, startAnalyze, subscribe, type AnalyzePayload } from "./api";
+import { downloadArtifact, fetchMeta, fetchModelStatus, openArtifact, setAccessTokenGetter, startAnalyze, subscribe, type AnalyzePayload } from "./api";
 import { AUTH_PERMISSIONS, useAppAuth, type AppAuthContext } from "./auth";
 import TopBar from "./components/TopBar";
 import AnalysisForm from "./components/AnalysisForm";
@@ -551,7 +551,26 @@ function AuditLogsView({ runs }: { runs: RunState[] | null }) {
   );
 }
 
+function ReadinessBadge({ value }: { value: boolean | null | undefined }) {
+  const label = value == null ? "Unknown" : value ? "Ready" : "Attention";
+  const cls = value == null
+    ? "bg-slate-100 text-ink-muted ring-1 ring-slate-200"
+    : value
+      ? "bg-primary-tint text-primary-selected ring-1 ring-primary-soft"
+      : "bg-danger-50 text-danger-700 ring-1 ring-danger-200";
+  return <span className={`inline-flex w-fit rounded-md px-2 py-1 text-caption font-extrabold ${cls}`}>{label}</span>;
+}
+
+function modelStatusText(probe?: ModelStatus["writer"] | ModelStatus["validator"] | null) {
+  if (!probe) return "Checking";
+  if (probe.reachable == null) return "Not required";
+  if (probe.reachable) return probe.available === false ? "Endpoint reachable, model missing" : "Reachable";
+  return probe.error || "Unavailable";
+}
+
 function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
+  const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
+  const [modelStatusError, setModelStatusError] = useState<string | null>(null);
   const safe = [
     "Local-first operation",
     "Ollama or configured provider",
@@ -564,6 +583,27 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
     "Method comparison",
     "Validation on/off",
   ];
+
+  useEffect(() => {
+    let cancelled = false;
+    setModelStatusError(null);
+    fetchModelStatus()
+      .then((status) => {
+        if (!cancelled) setModelStatus(status);
+      })
+      .catch((err) => {
+        if (!cancelled) setModelStatusError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const memoryReady = modelStatus?.memory?.healthy ?? modelStatus?.memory?.available ?? null;
+  const systemMemory = modelStatus?.system_memory.available_mb != null
+    ? `${modelStatus.system_memory.available_mb.toLocaleString()} MB available`
+    : (modelStatus?.system_memory.warning || "Unknown");
+
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-card">
@@ -582,6 +622,37 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-card">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lead font-extrabold text-ink">Model Readiness</h2>
+          <ReadinessBadge value={modelStatus?.overall.ready} />
+        </div>
+        {modelStatusError ? (
+          <p className="mt-4 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-body-sm font-semibold text-danger-700">
+            {modelStatusError}
+          </p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {[
+              ["Writer", `${modelStatus?.writer.configured_model || uiMeta?.models?.writer || "checking"} - ${modelStatusText(modelStatus?.writer)}`],
+              ["Validator", modelStatus?.validator.enabled === false ? "Off" : `${modelStatus?.validator.configured_model || uiMeta?.validation?.model || "checking"} - ${modelStatusText(modelStatus?.validator)}`],
+              ["RCA memory", modelStatus?.memory.enabled === false ? "Disabled" : `${modelStatus?.memory.record_count ?? "checking"} records - ${memoryReady ? "available" : "needs attention"}`],
+              ["System memory", systemMemory],
+            ].map(([label, value]) => (
+              <div key={label} className="grid grid-cols-[128px_minmax(0,1fr)] gap-3 text-body-sm">
+                <span className="font-bold text-ink-muted">{label}</span>
+                <span className="break-words font-extrabold text-ink">{value}</span>
+              </div>
+            ))}
+            {modelStatus?.overall.warnings?.length ? (
+              <div className="rounded-md border border-warn-200 bg-warn-50 px-3 py-2 text-ui font-semibold text-warn-700">
+                {modelStatus.overall.warnings.slice(0, 3).join(" ")}
+              </div>
+            ) : null}
+          </div>
+        )}
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-card">

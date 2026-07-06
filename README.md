@@ -134,6 +134,7 @@ The API is available at:
 
 ```text
 GET  /health
+GET  /ui/model-status
 POST /rca
 ```
 
@@ -143,6 +144,25 @@ Example API request:
 curl -X POST http://127.0.0.1:8000/rca \
   -H "Content-Type: application/json" \
   -d '{"problem_statement":"Login API returns HTTP 500 after deployment","method":"five_why"}'
+```
+
+## Demo Reset
+
+Reset local demo state before a live walkthrough:
+
+```bash
+python tools/demo_reset.py --activate-env
+```
+
+The command clears `outputs/`, refreshes `data/demo_past_rca_memory.xlsx` from
+the tracked baseline workbook, writes demo-safe model/Auth0 settings to `.env`
+with a timestamped backup when needed, and creates `outputs/demo_seed_state.json`
+with the recommended sample incident payload.
+
+Use this when you want to inspect the planned changes without writing files:
+
+```bash
+python tools/demo_reset.py --dry-run
 ```
 
 ## Frontend Development
@@ -167,6 +187,8 @@ Authentication is opt-in. With `AUTH_ENABLED=false`, the app keeps the local
 development behavior used by tests and demos. With Auth0 enabled, FastAPI
 validates RS256 access tokens against your tenant JWKS and enforces RCA
 permissions on backend routes.
+
+For the production checklist, see [docs/auth0_setup.md](docs/auth0_setup.md).
 
 In Auth0:
 
@@ -375,5 +397,6 @@ tests/              Unit and integration tests
 ## Documentation
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): detailed runtime architecture
+- [docs/auth0_setup.md](docs/auth0_setup.md): production Auth0 API, SPA, and RBAC setup
 - [docs/web_ui_guide.md](docs/web_ui_guide.md): web UI walkthrough
 - [web/README.md](web/README.md): web backend route details

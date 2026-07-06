@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, SSEvent, UiMeta } from "./types";
+import type { AnalyzeResponse, ModelStatus, SSEvent, UiMeta } from "./types";
 
 export type AccessTokenGetter = () => Promise<string | null>;
 
@@ -41,6 +41,12 @@ export async function startAnalyze(payload: AnalyzePayload): Promise<AnalyzeResp
 export async function fetchMeta(): Promise<UiMeta> {
   const res = await authFetch("/ui/meta");
   if (!res.ok) throw new Error(`meta failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchModelStatus(): Promise<ModelStatus> {
+  const res = await authFetch("/ui/model-status");
+  if (!res.ok) throw new Error(`model status failed: ${res.status}`);
   return res.json();
 }
 

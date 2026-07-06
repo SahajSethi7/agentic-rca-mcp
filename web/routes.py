@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from auth import AuthContext, require_permission
 from config import get_settings
 from memory import get_past_rca_memory_count
+from model_status import configured_validator_model, configured_writer_model, get_model_status
 from schemas import RCA_METHODS, RCAMethod
 from utils import append_audit_record, utc_now_iso
 from web.jobs import STAGES, Job, manager
@@ -70,13 +71,13 @@ def meta(auth: AuthContext = Depends(require_permission("rca:read"))) -> dict:
         "severities": ["low", "medium", "high", "critical"],
         "stages": list(STAGES),
         "models": {
-            "writer": settings.rca_model,
-            "validator": settings.validation_model or settings.rca_model,
+            "writer": configured_writer_model(settings),
+            "validator": configured_validator_model(settings),
         },
         "provider": settings.provider,
         "validation": {
             "enabled": settings.validation_enabled,
-            "model": settings.validation_model or settings.rca_model,
+            "model": configured_validator_model(settings),
         },
         "memory": memory,
         "auth": {
@@ -88,6 +89,13 @@ def meta(auth: AuthContext = Depends(require_permission("rca:read"))) -> dict:
             "permissions": sorted(auth.permissions),
         },
     }
+
+
+@router.get("/ui/model-status")
+def model_status(auth: AuthContext = Depends(require_permission("rca:read"))) -> dict:
+    """Live readiness check for model endpoints, configured models, and memory."""
+    _ = auth
+    return get_model_status(get_settings())
 
 
 @router.post("/ui/analyze")

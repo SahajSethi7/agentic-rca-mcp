@@ -104,6 +104,38 @@ def test_meta_lists_methods_and_stages(client, monkeypatch):
     assert isinstance(meta["memory"]["record_count"], int)
 
 
+def test_model_status_endpoint_reports_readiness(client, monkeypatch):
+    monkeypatch.setattr(
+        routes,
+        "get_model_status",
+        lambda settings: {
+            "checked_at": "2026-07-06T00:00:00+00:00",
+            "provider": "ollama",
+            "overall": {"ready": True, "warnings": []},
+            "writer": {
+                "configured_model": "demo-writer:1b",
+                "reachable": True,
+                "available": True,
+            },
+            "validator": {
+                "enabled": True,
+                "configured_model": "demo-validator:2b",
+                "reachable": True,
+                "available": True,
+            },
+            "memory": {"enabled": True, "available": True, "record_count": 12},
+            "system_memory": {"available_mb": 8192, "total_mb": 16384, "warning": None},
+        },
+    )
+
+    status = client.get("/ui/model-status").json()
+
+    assert status["overall"]["ready"] is True
+    assert status["writer"]["configured_model"] == "demo-writer:1b"
+    assert status["validator"]["reachable"] is True
+    assert status["memory"]["record_count"] == 12
+
+
 def test_analyze_streams_stages_and_renders_report(client):
     resp = client.post("/ui/analyze", json={
         "problem_statement": "Checkout requests time out after a database migration",

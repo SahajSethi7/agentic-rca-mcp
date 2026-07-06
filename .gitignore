@@ -1,4 +1,6 @@
 .env
+.env.demo
+.env.backup.*
 outputs/
 venv/
 __pycache__/
@@ -9,6 +11,24 @@ __pycache__/
 scratch/
 .sync_probe
 ~$*
+
+# Local document/export work products
+work_docx/
+/demo/
+/*.docx
+/docs/*.docx
+/*.pdf
+/docs/*.pdf
+/eval/*.pdf
+/docs/*.tex
+/PROJECT_EXPLAINED_SIMPLE.md
+
+# Demo reset writeback targets and generated training scratch data
+/data/demo_past_rca_memory.xlsx
+/data/synthetic_rca_examples.*
+
+# Keep frontend/package-lock.json tracked, ignore accidental root lockfiles.
+/package-lock.json
 
 # React frontend
 frontend/node_modules/

@@ -115,6 +115,40 @@ export interface UiMeta {
   };
 }
 
+export interface ModelProbe {
+  role?: string;
+  configured_model: string;
+  backend?: string;
+  endpoint?: string | null;
+  reachable: boolean | null;
+  available?: boolean | null;
+  catalog_count?: number | null;
+  error?: string | null;
+}
+
+export interface ModelStatus {
+  checked_at: string;
+  provider: string;
+  overall: {
+    ready: boolean;
+    warnings: string[];
+  };
+  writer: ModelProbe;
+  validator: ModelProbe & {
+    enabled: boolean;
+  };
+  memory: MemoryMeta & {
+    exists?: boolean;
+    available: boolean;
+    healthy?: boolean;
+  };
+  system_memory: {
+    available_mb: number | null;
+    total_mb: number | null;
+    warning?: string | null;
+  };
+}
+
 export type SSEvent =
   | {
       type: "stage";

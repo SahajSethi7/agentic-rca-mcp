@@ -7,8 +7,15 @@ __pycache__
 *.pyc
 venv
 .env
+.env.demo
+.env.backup.*
 outputs
 scratch
+work_docx
+demo
+package-lock.json
+*.docx
+*.pdf
 frontend/node_modules
 frontend/dist
 frontend/*.log
