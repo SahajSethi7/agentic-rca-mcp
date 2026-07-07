@@ -33,7 +33,7 @@ export interface KnownIssueMatch {
   status?: string | null;
   similarity_score: number;
   match_reason: string;
-  retrieval_mode?: "lexical" | "graph" | "hybrid";
+  retrieval_mode?: "lexical" | "graph" | "semantic" | "hybrid";
   graph_path?: string[];
 }
 
@@ -185,6 +185,18 @@ export interface ModelStatus {
       record_count?: number | null;
       built_at?: string | null;
       source_path?: string | null;
+      warning?: string | null;
+    };
+    embeddings?: {
+      enabled: boolean;
+      model?: string | null;
+      path?: string | null;
+      exists: boolean;
+      fresh: boolean;
+      vector_count?: number | null;
+      built_at?: string | null;
+      endpoint?: string | null;
+      model_available?: boolean | null;
       warning?: string | null;
     };
   };

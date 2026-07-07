@@ -356,6 +356,10 @@ Common environment variables:
 | `RCA_MEMORY_WRITEBACK_ENABLED` | Append completed RCAs to memory workbook | `false` locally, `true` in Compose |
 | `RCA_MEMORY_GRAPH_ENABLED` | Enable SQLite graph-boosted past RCA retrieval | `true` |
 | `RCA_MEMORY_GRAPH_PATH` | Derived graph cache path | `./outputs/cache/rca_memory_graph.sqlite` |
+| `RCA_MEMORY_EMBEDDINGS_ENABLED` | Enable semantic (embedding) past RCA retrieval; requires a pulled embedding model, fails soft to lexical/graph | `false` |
+| `RCA_EMBEDDING_MODEL` | Local embedding model served by the Ollama-compatible endpoint (`ollama pull nomic-embed-text`) | `nomic-embed-text` |
+| `RCA_MEMORY_SEMANTIC_WEIGHT` | Cap on the semantic contribution to the hybrid retrieval score (gated by lexical weakness; clamped/thresholded cosine) | `0.40` |
+| `RCA_MEMORY_EMBEDDINGS_PATH` | Derived embedding vector cache path | `./outputs/cache/rca_memory_embeddings.sqlite` |
 | `RCA_JOB_HISTORY_PATH` | Durable SQLite job/audit history path | `./outputs/app_state.sqlite` |
 | `RCA_JOB_HISTORY_MAX_JOBS` | Maximum retained job records | `200` |
 | `RCA_JOB_HISTORY_RETENTION_DAYS` | Job history retention window | `30` |

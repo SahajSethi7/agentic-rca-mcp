@@ -657,6 +657,23 @@ function graphStatusText(graph?: NonNullable<ModelStatus["memory"]["graph"]>) {
   return `${graph.node_count} nodes · updated ${updatedLabel} · source: ${source}${staleness}`;
 }
 
+function embeddingStatusText(embeddings?: NonNullable<ModelStatus["memory"]["embeddings"]>) {
+  if (!embeddings || embeddings.enabled === false) return "Disabled";
+  const model = embeddings.model || "embedding model";
+  const modelState = embeddings.model_available === false
+    ? "model missing"
+    : embeddings.model_available === true
+      ? "model pulled"
+      : "model unchecked";
+  if (embeddings.vector_count == null) return `${model} - ${modelState}; index builds on the next memory search`;
+  const built = embeddings.built_at ? new Date(embeddings.built_at) : null;
+  const updatedLabel = built && !Number.isNaN(built.getTime())
+    ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(built)
+    : "unknown time";
+  const staleness = embeddings.fresh ? "" : " · stale, refreshes on next memory search";
+  return `${embeddings.vector_count} vectors · ${model} · ${modelState} · updated ${updatedLabel}${staleness}`;
+}
+
 function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
   const [modelStatusError, setModelStatusError] = useState<string | null>(null);
@@ -690,6 +707,7 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
 
   const memoryReady = modelStatus?.memory?.healthy ?? modelStatus?.memory?.available ?? null;
   const graph = modelStatus?.memory?.graph;
+  const embeddings = modelStatus?.memory?.embeddings;
   const sysMem = modelStatus?.system_memory;
   const memoryHint = sysMem?.recommended_mb != null
     ? ` · recommended ≥ ${sysMem.recommended_mb.toLocaleString()} MB for stable runs`
@@ -739,6 +757,7 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
               ["Validator", modelStatus?.validator.enabled === false ? "Off" : `${modelStatus?.validator.configured_model || uiMeta?.validation?.model || "checking"} - ${modelStatusText(modelStatus?.validator)}`],
               ["RCA memory", modelStatus?.memory.enabled === false ? "Disabled" : `${modelStatus?.memory.record_count ?? "checking"} records - ${memoryReady ? "available" : "needs attention"}`],
               ["Memory graph", graphStatusText(graph)],
+              ["Memory embeddings", embeddingStatusText(embeddings)],
               ["Job history", history?.total_runs != null
                 ? `${history.total_runs} runs (${history.failed_runs ?? 0} failed${failedDetail ? `: ${failedDetail}` : ""})`
                 : "Checking"],

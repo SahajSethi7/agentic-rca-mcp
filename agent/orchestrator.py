@@ -20,7 +20,13 @@ from typing import Any, Callable
 
 from agent.tools import run_all_checks
 from config import Settings, get_settings
-from memory import append_memory_to_context, append_rca_to_memory, search_past_rca_memory
+from embeddings import embedding_config_from_settings
+from memory import (
+    append_memory_to_context,
+    append_rca_to_memory,
+    refresh_memory_embeddings,
+    search_past_rca_memory,
+)
 from prompts import build_revise_messages
 from providers.base import RCAProvider
 from rca_agent import build_provider, generate_rca
@@ -155,6 +161,7 @@ class RCAAgent:
                 min_score=self.settings.memory_min_score,
                 graph_enabled=self.settings.memory_graph_enabled,
                 graph_path=self.settings.memory_graph_path,
+                embedding_config=embedding_config_from_settings(self.settings),
             )
             memory_matches = memory_search.matches
             if memory_search.evidence_pack:
@@ -397,6 +404,17 @@ class RCAAgent:
                     "row_number": writeback.row_number,
                     "memory_path": str(writeback.memory_path),
                 }
+                # Keep the semantic index warm: only the appended row is
+                # embedded (per-row content hashing). Fail-soft - the index
+                # would refresh lazily on the next memory search anyway.
+                embedding_config = embedding_config_from_settings(self.settings)
+                if embedding_config is not None:
+                    try:
+                        refresh_memory_embeddings(self.settings.memory_path, embedding_config)
+                    except Exception:  # noqa: BLE001 - embedding refresh is fail-soft
+                        logger.info(
+                            "RCA memory embedding refresh failed; index will refresh lazily."
+                        )
                 report = report.model_copy(
                     update={
                         "validation_notes": [

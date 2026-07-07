@@ -8,17 +8,46 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
 
 import api
 import model_status
 import web.jobs as jobs
 import web.routes as routes
 from config import Settings, _env_tuple
+from memory import MEMORY_COLUMNS
 from model_status import allowed_writer_models
 from schemas import RCAReport
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 _FIXTURE = json.loads((EXAMPLES / "sample_rca_1.json").read_text())
+
+
+def _memory_workbook(path: Path) -> None:
+    wb = Workbook()
+    sheet = wb.active
+    sheet.title = "Past RCA Memory"
+    sheet.append(MEMORY_COLUMNS)
+    sheet.append(
+        [
+            "AUTH-001",
+            "2026-07-01",
+            "identity",
+            "login-api",
+            "JWT issuer mismatch",
+            "Users cannot sign in after auth deployment.",
+            "HTTP 500 during login and token validation failures.",
+            "Deployment introduced a missing JWT issuer environment variable.",
+            "Restore the JWT issuer env var.",
+            "Add deployment validation for auth env vars.",
+            "deployment diff; auth logs",
+            "identity-platform",
+            "auth,jwt",
+            "high",
+            "approved",
+        ]
+    )
+    wb.save(path)
 
 
 class StubAgent:
@@ -179,6 +208,39 @@ def test_model_status_endpoint_reachable_when_allowed_model_missing(monkeypatch,
     assert status["writer"]["reachable"] is True
     assert status["writer"]["available"] is False
     assert status["overall"]["ready"] is False
+
+
+def test_model_status_warns_when_embedding_model_missing_before_index_build(monkeypatch, tmp_path):
+    memory_path = tmp_path / "past_rca_memory.xlsx"
+    _memory_workbook(memory_path)
+    settings = Settings(
+        output_dir=tmp_path,
+        job_history_path=tmp_path / "app_state.sqlite",
+        rca_model="qwen3:8b",
+        allowed_models=("qwen3:8b",),
+        validation_enabled=False,
+        memory_path=memory_path,
+        memory_embeddings_enabled=True,
+        memory_embeddings_path=tmp_path / "cache" / "rca_memory_embeddings.sqlite",
+    )
+    monkeypatch.setattr(
+        model_status,
+        "_read_model_catalog",
+        lambda backend: {
+            "reachable": True,
+            "model_ids": ["qwen3:8b"],
+            "error": None,
+            "url": "http://localhost:11434/v1/models",
+        },
+    )
+
+    status = model_status.get_model_status(settings)
+    embeddings = status["memory"]["embeddings"]
+
+    assert embeddings["model_available"] is False
+    assert "ollama pull nomic-embed-text" in embeddings["warning"]
+    assert "has not been built yet" in embeddings["warning"]
+    assert any("ollama pull nomic-embed-text" in warning for warning in status["overall"]["warnings"])
 
 
 def test_analyze_streams_stages_and_renders_report(client):

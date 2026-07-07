@@ -59,6 +59,12 @@ class Settings:
     memory_graph_path: Path = Path(
         os.getenv("RCA_MEMORY_GRAPH_PATH", "./outputs/cache/rca_memory_graph.sqlite")
     )
+    memory_embeddings_enabled: bool = _env_bool("RCA_MEMORY_EMBEDDINGS_ENABLED", "false")
+    embedding_model: str = os.getenv("RCA_EMBEDDING_MODEL", "nomic-embed-text")
+    memory_semantic_weight: float = float(os.getenv("RCA_MEMORY_SEMANTIC_WEIGHT", "0.40"))
+    memory_embeddings_path: Path = Path(
+        os.getenv("RCA_MEMORY_EMBEDDINGS_PATH", "./outputs/cache/rca_memory_embeddings.sqlite")
+    )
     job_history_path: Path = Path(os.getenv("RCA_JOB_HISTORY_PATH", "./outputs/app_state.sqlite"))
     job_history_max_jobs: int = int(os.getenv("RCA_JOB_HISTORY_MAX_JOBS", "200"))
     job_history_retention_days: int = int(os.getenv("RCA_JOB_HISTORY_RETENTION_DAYS", "30"))

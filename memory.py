@@ -18,6 +18,12 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, TypedDict
 
+from embeddings import (
+    EmbeddingConfig,
+    ensure_memory_embedding_index,
+    semantic_contribution,
+    semantic_scores,
+)
 from schemas import KnownIssueMatch, RCAInput, RCAReport
 
 MEMORY_COLUMNS = [
@@ -117,6 +123,8 @@ class MemoryState(TypedDict, total=False):
     graph_enabled: bool
     graph_path: Path
     graph_warning: str | None
+    embedding_config: EmbeddingConfig | None
+    semantic_warning: str | None
 
 
 def _tokens(text: str | None) -> set[str]:
@@ -537,21 +545,52 @@ def _rank_records(state: MemoryState) -> MemoryState:
             graph_warning = f"RCA memory graph unavailable; used lexical retrieval ({type(exc).__name__})."
             graph_enabled = False
 
+    # Third retrieval signal: dense embeddings for paraphrase/synonym recall.
+    # Must fail soft exactly like the graph path (endpoint down, model not
+    # pulled, cache unwritable -> warning + lexical/graph retrieval only).
+    semantic_warning: str | None = None
+    semantic_by_id: dict[str, float] = {}
+    embedding_config = state.get("embedding_config")
+    if embedding_config is not None:
+        try:
+            semantic_by_id = semantic_scores(
+                _query_text(rca_input),
+                state.get("records", []),
+                state["memory_path"],
+                embedding_config,
+            )
+        except Exception as exc:  # noqa: BLE001 - semantic retrieval must fail soft.
+            semantic_warning = (
+                f"RCA memory embeddings unavailable; used lexical/graph retrieval ({type(exc).__name__})."
+            )
+            semantic_by_id = {}
+
     scored: list[tuple[float, str, str, list[str], dict[str, Any]]] = []
     for record in state.get("records", []):
         lexical_score, lexical_reason = _score_record(query_tokens, rca_input, record)
         graph_score, graph_reasons, graph_path = (
             _graph_score_record(query_tokens, record) if graph_enabled else (0.0, [], [])
         )
-        score = min(1.0, lexical_score + graph_score)
-        if graph_score and lexical_score:
+        raw_cosine = semantic_by_id.get(_text(record.get("incident_id")), 0.0)
+        semantic_score = (
+            semantic_contribution(raw_cosine, lexical_score, embedding_config)
+            if embedding_config is not None
+            else 0.0
+        )
+        score = min(1.0, lexical_score + graph_score + semantic_score)
+        active_signals = sum(1 for signal in (lexical_score, graph_score, semantic_score) if signal)
+        if active_signals >= 2:
             retrieval_mode = "hybrid"
+        elif semantic_score:
+            retrieval_mode = "semantic"
         elif graph_score:
             retrieval_mode = "graph"
         else:
             retrieval_mode = "lexical"
         reasons = [lexical_reason] if lexical_score else []
         reasons.extend(graph_reasons[:3])
+        if semantic_score:
+            reasons.append(f"semantic similarity: {raw_cosine:.2f}")
         reason = "; ".join(reasons) if reasons else "Weak lexical similarity."
         if score >= state["min_score"]:
             scored.append((score, reason, retrieval_mode, graph_path, record))
@@ -574,6 +613,7 @@ def _rank_records(state: MemoryState) -> MemoryState:
         "matches": matches,
         "context_matches": matches[:context_limit],
         "graph_warning": graph_warning,
+        "semantic_warning": semantic_warning,
         "graph_enabled": graph_enabled,
     }
 
@@ -604,6 +644,11 @@ def _build_evidence_pack(state: MemoryState) -> MemoryState:
     return {**state, "evidence_pack": "\n".join(lines).strip()}
 
 
+def _merged_warning(state: MemoryState) -> str | None:
+    warnings = [w for w in (state.get("graph_warning"), state.get("semantic_warning")) if w]
+    return " ".join(warnings) if warnings else None
+
+
 def _direct_memory_search(
     rca_input: RCAInput,
     memory_path: Path,
@@ -612,6 +657,7 @@ def _direct_memory_search(
     min_score: float,
     graph_enabled: bool,
     graph_path: Path,
+    embedding_config: EmbeddingConfig | None = None,
 ) -> MemorySearch:
     records = _load_records(memory_path)
     state: MemoryState = {
@@ -622,6 +668,7 @@ def _direct_memory_search(
         "records": records,
         "graph_enabled": graph_enabled,
         "graph_path": graph_path,
+        "embedding_config": embedding_config,
     }
     state = _rank_records(state)
     state = _build_evidence_pack(state)
@@ -630,7 +677,7 @@ def _direct_memory_search(
         evidence_pack=state.get("evidence_pack"),
         retrieval_mode="graph" if state.get("graph_enabled") else "deterministic",
         context_match_count=len(state.get("context_matches", [])),
-        warning=state.get("graph_warning"),
+        warning=_merged_warning(state),
     )
 
 
@@ -642,6 +689,7 @@ def _langgraph_memory_search(
     min_score: float,
     graph_enabled: bool,
     graph_path: Path,
+    embedding_config: EmbeddingConfig | None = None,
 ) -> MemorySearch:
     from langchain_core.documents import Document
     from langgraph.graph import END, START, StateGraph
@@ -686,6 +734,7 @@ def _langgraph_memory_search(
             "min_score": min_score,
             "graph_enabled": graph_enabled,
             "graph_path": graph_path,
+            "embedding_config": embedding_config,
         }
     )
     return MemorySearch(
@@ -693,7 +742,7 @@ def _langgraph_memory_search(
         evidence_pack=state.get("evidence_pack"),
         retrieval_mode="langgraph-graph" if state.get("graph_enabled") else "langgraph",
         context_match_count=len(state.get("context_matches", [])),
-        warning=state.get("graph_warning"),
+        warning=_merged_warning(state),
     )
 
 
@@ -705,6 +754,7 @@ def search_past_rca_memory(
     min_score: float = 0.50,
     graph_enabled: bool = True,
     graph_path: Path | None = None,
+    embedding_config: EmbeddingConfig | None = None,
 ) -> MemorySearch:
     """Return all threshold-passing RCA records and a compact prompt evidence pack."""
     graph_path = graph_path or memory_path.with_suffix(".graph.sqlite")
@@ -725,6 +775,7 @@ def search_past_rca_memory(
             min_score=min_score,
             graph_enabled=graph_enabled,
             graph_path=graph_path,
+            embedding_config=embedding_config,
         )
     except ModuleNotFoundError as exc:
         try:
@@ -735,6 +786,7 @@ def search_past_rca_memory(
                 min_score=min_score,
                 graph_enabled=graph_enabled,
                 graph_path=graph_path,
+                embedding_config=embedding_config,
             )
             return MemorySearch(
                 matches=result.matches,
@@ -761,6 +813,7 @@ def search_past_rca_memory(
                 min_score=min_score,
                 graph_enabled=graph_enabled,
                 graph_path=graph_path,
+                embedding_config=embedding_config,
             )
             return MemorySearch(
                 matches=result.matches,
@@ -778,6 +831,15 @@ def search_past_rca_memory(
                 context_match_count=0,
                 warning=f"RCA memory retrieval failed: {type(fallback_exc).__name__}",
             )
+
+
+def refresh_memory_embeddings(memory_path: Path, embedding_config: EmbeddingConfig) -> dict[str, Any]:
+    """Incrementally refresh the embedding index (e.g. right after write-back).
+
+    Thanks to per-row content hashing this embeds only rows that are new or
+    changed since the last build. Callers should treat failures as soft.
+    """
+    return ensure_memory_embedding_index(memory_path, embedding_config, _load_records(memory_path))
 
 
 def get_past_rca_memory_count(memory_path: Path) -> int:

@@ -32,7 +32,7 @@ class KnownIssueMatch(BaseModel):
     status: str | None = Field(default=None)
     similarity_score: float = Field(ge=0, le=1, description="Local retrieval similarity score.")
     match_reason: str = Field(description="Short explanation of why this memory matched.")
-    retrieval_mode: Literal["lexical", "graph", "hybrid"] = Field(
+    retrieval_mode: Literal["lexical", "graph", "semantic", "hybrid"] = Field(
         default="lexical",
         description="How the past RCA match was retrieved.",
     )

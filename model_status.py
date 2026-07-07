@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from config import Settings, get_settings
+from embeddings import EmbeddingConfig, get_embedding_index_status
 from memory import get_memory_graph_status, get_past_rca_memory_count
 from web.history import JobHistoryStore
 
@@ -217,7 +218,54 @@ def _memory_status(settings: Settings) -> dict[str, Any]:
         settings.memory_graph_path,
         enabled=settings.memory_graph_enabled and settings.memory_enabled,
     )
+    status["embeddings"] = get_embedding_index_status(
+        path,
+        EmbeddingConfig(
+            base_url=settings.ollama_base_url,
+            model=settings.embedding_model,
+            index_path=Path(settings.memory_embeddings_path),
+            weight=settings.memory_semantic_weight,
+        ),
+        enabled=settings.memory_embeddings_enabled and settings.memory_enabled,
+    )
     return status
+
+
+def _annotate_embedding_model_availability(
+    settings: Settings,
+    memory: dict[str, Any],
+    catalogs: dict[ModelBackend, dict[str, Any]],
+) -> None:
+    """Mark whether the configured embedding model is pulled on the endpoint.
+
+    Reuses an already-fetched Ollama catalog when possible so the status probe
+    stays cheap. Purely informational: semantic retrieval fails soft at runtime.
+    """
+    embeddings = memory.get("embeddings")
+    if not isinstance(embeddings, dict) or not embeddings.get("enabled"):
+        return
+    backend = ModelBackend("ollama", settings.ollama_base_url, "ollama")
+    catalog = catalogs.get(backend) or _read_model_catalog(backend)
+    model_ids = catalog.get("model_ids") or []
+    model = settings.embedding_model
+    available: bool | None = None
+    if catalog.get("reachable") and model:
+        # Ollama catalogs list tagged names such as "nomic-embed-text:latest".
+        available = any(
+            candidate == model or candidate.split(":", 1)[0] == model
+            for candidate in model_ids
+        )
+    embeddings["endpoint"] = catalog.get("url")
+    embeddings["model_available"] = available
+    if catalog.get("reachable") and available is False:
+        warning = (
+            f"Embedding model {model!r} is not pulled (try `ollama pull {model}`); "
+            "semantic retrieval will fall back to lexical/graph."
+        )
+        existing_warning = embeddings.get("warning")
+        embeddings["warning"] = f"{warning} {existing_warning}" if existing_warning else warning
+    elif not catalog.get("reachable") and not embeddings.get("warning"):
+        embeddings["warning"] = catalog.get("error")
 
 
 def _linux_memory() -> dict[str, int | None]:
@@ -355,6 +403,7 @@ def get_model_status(settings: Settings | None = None) -> dict[str, Any]:
         }
 
     memory = _memory_status(settings)
+    _annotate_embedding_model_availability(settings, memory, catalogs)
     system_memory = _system_memory_status(settings)
     history_store = JobHistoryStore(settings)
     history_metrics = history_store.metrics()
@@ -373,6 +422,7 @@ def get_model_status(settings: Settings | None = None) -> dict[str, Any]:
             validator.get("error") if settings.validation_enabled else None,
             memory.get("warning") if not memory.get("healthy") else None,
             memory.get("graph", {}).get("warning") if isinstance(memory.get("graph"), dict) else None,
+            memory.get("embeddings", {}).get("warning") if isinstance(memory.get("embeddings"), dict) else None,
             system_memory.get("warning") if system_memory.get("below_recommended") else None,
             history_metrics.get("warning"),
         ]
