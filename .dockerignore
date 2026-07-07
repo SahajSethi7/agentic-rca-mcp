@@ -1,6 +1,7 @@
 .git
 .github
 .pytest_cache
+.tmp
 .vscode
 __pycache__
 **/__pycache__

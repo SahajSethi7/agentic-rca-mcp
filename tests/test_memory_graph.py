@@ -80,6 +80,9 @@ def test_graph_memory_builds_sqlite_index_and_returns_graph_paths(tmp_path) -> N
     assert status["fresh"] is True
     assert status["node_count"] > 0
     assert status["edge_count"] > 0
+    # Freshness detail surfaced to the UI: when it was built and from what.
+    assert status["built_at"]
+    assert status["source_path"] and status["source_path"].endswith("past_rca_memory.xlsx")
 
 
 def test_graph_memory_falls_back_to_lexical_when_cache_cannot_be_written(tmp_path) -> None:

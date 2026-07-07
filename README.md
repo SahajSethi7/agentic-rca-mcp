@@ -15,8 +15,8 @@ JSONL audit trail.
 - React + TypeScript + Tailwind web UI with live stage progress, report review,
   method comparison, and export links for PDF, standalone HTML, and matching
   past-RCA Excel records.
-- UI-selectable allowlisted writer models for per-run local Ollama generation
-  without editing `.env` or rebuilding Docker.
+- UI-selectable allowlisted writer and validator models for per-run local
+  Ollama generation/review without editing `.env` or rebuilding Docker.
 - Shared RCA engine for the web UI, FastAPI API, CLI, and MCP server.
 - Three RCA methods: 5 Whys, Fishbone, and simplified Fault Tree.
 - OpenAI-compatible provider abstraction for local Ollama or hosted endpoints.
@@ -32,7 +32,8 @@ JSONL audit trail.
 - Local PDF, HTML, internal JSON artifacts, JSONL audit logs, and durable
   SQLite web job/audit history under `OUTPUT_DIR`.
 - Operator-facing model, memory graph, job history, disk, and system-memory
-  health through `/ui/model-status`.
+  health through `/ui/model-status`, including graph build metadata and
+  failed-run breakdowns.
 - Optional Auth0 OAuth/RBAC protection for the React UI and FastAPI routes.
 - Docker Compose setup with FastAPI, Nginx-served frontend, and Ollama.
 
@@ -152,6 +153,10 @@ curl -X POST http://127.0.0.1:8000/rca \
   -H "Content-Type: application/json" \
   -d '{"problem_statement":"Login API returns HTTP 500 after deployment","method":"five_why"}'
 ```
+
+The web job endpoint `POST /ui/analyze` also accepts optional per-run
+`generation_model` and `validation_model` values. Both are checked against
+their configured allowlists and invalid values return HTTP 422.
 
 ## Demo Reset
 
@@ -337,10 +342,12 @@ Common environment variables:
 | `LLM_PROVIDER` | `ollama` or `hosted` | `ollama` |
 | `OLLAMA_BASE_URL` | Local Ollama OpenAI-compatible endpoint | `http://localhost:11434/v1` |
 | `RCA_MODEL` | Generation model | `qwen3:8b` |
-| `RCA_ALLOWED_MODELS` | UI-selectable local writer models | `qwen3:8b,qwen3.5:4b` |
+| `RCA_ALLOWED_MODELS` | UI-selectable local writer models; empty env input falls back to the documented default | `qwen3:8b,qwen3.5:4b` |
 | `RCA_MAX_OUTPUT_TOKENS` | Generation token budget | `4096` |
 | `VALIDATION_MODEL` | Optional reviewer model | unset locally, `llama3.2:latest` in Compose |
+| `RCA_ALLOWED_VALIDATION_MODELS` | UI-selectable validator models; empty means the configured validator only | unset |
 | `RCA_VALIDATION_ENABLED` | Enable reviewer validation | `true` |
+| `RCA_RECOMMENDED_MEMORY_MB` | Recommended free RAM shown as a Settings stability hint and warning threshold | `8192` |
 | `OUTPUT_DIR` | Artifact and audit output directory | `./outputs` |
 | `RCA_MEMORY_ENABLED` | Enable Excel memory retrieval | `true` |
 | `RCA_MEMORY_PATH` | Past RCA workbook path | `./data/past_rca_memory_sample_repaired.xlsx` |

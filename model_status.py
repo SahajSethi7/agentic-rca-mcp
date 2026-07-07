@@ -40,6 +40,19 @@ def configured_validator_model(settings: Settings) -> str:
     return settings.validation_model or configured_writer_model(settings)
 
 
+def allowed_validator_models(settings: Settings) -> tuple[str, ...]:
+    """Validator models selectable per run.
+
+    Falls back to the configured validator when RCA_ALLOWED_VALIDATION_MODELS
+    is unset/empty, so the UI always has at least one legitimate option.
+    """
+    allowed = [model for model in settings.allowed_validation_models if model]
+    if not allowed:
+        configured = configured_validator_model(settings)
+        return (configured,) if configured else ()
+    return tuple(dict.fromkeys(allowed))
+
+
 def _writer_backend(settings: Settings) -> ModelBackend:
     if settings.provider == "hosted":
         return ModelBackend("hosted", settings.hosted_base_url, settings.hosted_api_key)
@@ -164,6 +177,18 @@ def _allowed_model_status(settings: Settings, catalog: dict[str, Any]) -> list[d
     ]
 
 
+def _allowed_validator_status(settings: Settings, catalog: dict[str, Any]) -> list[dict[str, Any]]:
+    model_ids = catalog.get("model_ids") or []
+    return [
+        {
+            "model": model,
+            "available": model in model_ids if model_ids else None,
+            "selected": model == configured_validator_model(settings),
+        }
+        for model in allowed_validator_models(settings)
+    ]
+
+
 def _memory_status(settings: Settings) -> dict[str, Any]:
     path = Path(settings.memory_path)
     status: dict[str, Any] = {
@@ -234,17 +259,34 @@ def _windows_memory() -> dict[str, int | None]:
     }
 
 
-def _system_memory_status() -> dict[str, Any]:
+def _system_memory_status(settings: Settings) -> dict[str, Any]:
+    recommended_mb = max(0, settings.recommended_memory_mb)
     try:
         memory = _windows_memory() if os.name == "nt" else _linux_memory()
+        available_mb = memory["available_mb"]
+        below = (
+            available_mb is not None and recommended_mb > 0 and available_mb < recommended_mb
+        )
+        warning = None
+        if available_mb is None:
+            warning = "Available memory could not be determined."
+        elif below:
+            warning = (
+                f"Performance may degrade: available memory ({available_mb} MB) is "
+                f"below the recommended {recommended_mb} MB threshold."
+            )
         return {
             **memory,
-            "warning": None if memory["available_mb"] is not None else "Available memory could not be determined.",
+            "recommended_mb": recommended_mb or None,
+            "below_recommended": below,
+            "warning": warning,
         }
     except Exception as exc:  # noqa: BLE001 - OS diagnostics are best-effort.
         return {
             "available_mb": None,
             "total_mb": None,
+            "recommended_mb": recommended_mb or None,
+            "below_recommended": False,
             "warning": f"{type(exc).__name__}: {exc}",
         }
 
@@ -298,6 +340,7 @@ def get_model_status(settings: Settings | None = None) -> dict[str, Any]:
                 catalog=catalogs[validator_backend],
             ),
         }
+        validator["allowed_models"] = _allowed_validator_status(settings, catalogs[validator_backend])
     else:
         validator = {
             "enabled": False,
@@ -312,6 +355,7 @@ def get_model_status(settings: Settings | None = None) -> dict[str, Any]:
         }
 
     memory = _memory_status(settings)
+    system_memory = _system_memory_status(settings)
     history_store = JobHistoryStore(settings)
     history_metrics = history_store.metrics()
     allowed = allowed_writer_models(settings)
@@ -329,6 +373,7 @@ def get_model_status(settings: Settings | None = None) -> dict[str, Any]:
             validator.get("error") if settings.validation_enabled else None,
             memory.get("warning") if not memory.get("healthy") else None,
             memory.get("graph", {}).get("warning") if isinstance(memory.get("graph"), dict) else None,
+            system_memory.get("warning") if system_memory.get("below_recommended") else None,
             history_metrics.get("warning"),
         ]
         if item
@@ -354,7 +399,7 @@ def get_model_status(settings: Settings | None = None) -> dict[str, Any]:
         "writer": writer,
         "validator": validator,
         "memory": memory,
-        "system_memory": _system_memory_status(),
+        "system_memory": system_memory,
         "output_storage": _output_storage_status(settings),
         "job_history": history_metrics,
     }

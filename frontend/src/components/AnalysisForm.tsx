@@ -32,6 +32,7 @@ export default function AnalysisForm({
   validatorModel,
   validationEnabled,
   allowedWriterModels = [],
+  allowedValidatorModels = [],
   modelStatus,
 }: {
   onSubmit: (p: AnalyzePayload) => void;
@@ -42,6 +43,7 @@ export default function AnalysisForm({
   validatorModel: string;
   validationEnabled: boolean;
   allowedWriterModels?: string[];
+  allowedValidatorModels?: string[];
   modelStatus?: ModelStatus | null;
 }) {
   const [problem, setProblem] = useState("");
@@ -57,8 +59,17 @@ export default function AnalysisForm({
     [allowedWriterModels],
   );
   const [generationModel, setGenerationModel] = useState(writerModel);
+  const validatorOptions = useMemo(
+    () => Array.from(new Set(allowedValidatorModels.filter(Boolean))),
+    [allowedValidatorModels],
+  );
+  const [validationModel, setValidationModel] = useState(validatorModel);
   const availability = useMemo(() => {
     const pairs = modelStatus?.writer.allowed_models ?? [];
+    return new Map(pairs.map((item) => [item.model, item.available]));
+  }, [modelStatus]);
+  const validatorAvailability = useMemo(() => {
+    const pairs = modelStatus?.validator.allowed_models ?? [];
     return new Map(pairs.map((item) => [item.model, item.available]));
   }, [modelStatus]);
 
@@ -73,6 +84,12 @@ export default function AnalysisForm({
     }
   }, [generationModel, modelOptions, writerModel]);
 
+  useEffect(() => {
+    if (!validationModel || !validatorOptions.includes(validationModel)) {
+      setValidationModel(validatorOptions.includes(validatorModel) ? validatorModel : validatorOptions[0] || "");
+    }
+  }, [validationModel, validatorOptions, validatorModel]);
+
   function submit(e: FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
@@ -84,6 +101,7 @@ export default function AnalysisForm({
       system_area: systemArea.trim() || null,
       context: context.trim() || null,
       generation_model: generationModel || null,
+      validation_model: validationEnabled ? validationModel || null : null,
     });
   }
 
@@ -236,6 +254,30 @@ export default function AnalysisForm({
             </p>
           </div>
 
+          {validationEnabled && (
+            <div>
+              <label className="mb-1.5 block text-body-sm font-semibold text-ink" htmlFor="validation-model">Validator model</label>
+              <select
+                id="validation-model"
+                value={validationModel}
+                onChange={(e) => setValidationModel(e.target.value)}
+                className="h-10 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-body font-semibold text-ink outline-none transition focus:border-primary focus:bg-white focus:ring-[3px] focus:ring-primary-tint"
+              >
+                {validatorOptions.map((model) => {
+                  const available = validatorAvailability.get(model);
+                  return (
+                    <option key={model} value={model} disabled={available === false}>
+                      {model}{available === false ? " (not pulled)" : available === true ? " (ready)" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+              <p className="mt-1.5 text-ui leading-5 text-ink-muted">
+                Reviewer model that assigns final confidence and validation notes.
+              </p>
+            </div>
+          )}
+
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div>
               <label className="mb-1.5 block text-body-sm font-semibold text-ink">Severity</label>
@@ -306,7 +348,7 @@ export default function AnalysisForm({
             ["Severity", labelForSeverity(severity)],
             ["System area", systemArea.trim() || "Not set"],
             ["Writer model", generationModel || writerModel],
-            ["Validator", validationEnabled ? validatorModel : "Off"],
+            ["Validator", validationEnabled ? validationModel || validatorModel : "Off"],
             ["Memory", memoryLabel],
           ].map(([label, value]) => (
             <div key={label} className="grid grid-cols-[112px_minmax(0,1fr)] gap-3 text-body-sm">

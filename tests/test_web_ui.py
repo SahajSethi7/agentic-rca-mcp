@@ -261,6 +261,103 @@ def test_analyze_rejects_disallowed_generation_model(client, monkeypatch, tmp_pa
     assert resp.json()["detail"]["error"] == "model_not_allowed"
 
 
+def test_allowed_validator_models_fall_back_to_configured_validator():
+    settings = Settings(
+        rca_model="qwen3:8b",
+        validation_model="llama3.2:latest",
+        allowed_validation_models=(),
+    )
+
+    assert model_status.allowed_validator_models(settings) == ("llama3.2:latest",)
+
+
+def test_analyze_accepts_allowlisted_validation_model(client, monkeypatch, tmp_path):
+    settings = Settings(
+        output_dir=tmp_path,
+        job_history_path=tmp_path / "app_state.sqlite",
+        validation_enabled=False,
+        validation_model="llama3.2:latest",
+        allowed_validation_models=("llama3.2:latest", "qwen3:8b"),
+    )
+    monkeypatch.setattr(routes, "get_settings", lambda: settings)
+    monkeypatch.setattr(jobs, "get_settings", lambda: settings)
+    seen_settings: list[Settings] = []
+
+    def factory(run_settings):
+        seen_settings.append(run_settings)
+        return StubAgent(run_settings)
+
+    jobs.manager.set_agent_factory(factory)
+
+    resp = client.post("/ui/analyze", json={
+        "problem_statement": "Checkout requests time out after a database migration",
+        "method": "five_why",
+        "validation_model": "qwen3:8b",
+    })
+
+    assert resp.status_code == 200
+    _drain(client, resp.json()["job_id"])
+    assert seen_settings
+    assert seen_settings[0].validation_model == "qwen3:8b"
+
+
+def test_analyze_rejects_disallowed_validation_model(client, monkeypatch, tmp_path):
+    settings = Settings(
+        output_dir=tmp_path,
+        validation_model="llama3.2:latest",
+    )
+    monkeypatch.setattr(routes, "get_settings", lambda: settings)
+
+    resp = client.post("/ui/analyze", json={
+        "problem_statement": "Checkout requests time out after a database migration",
+        "method": "five_why",
+        "validation_model": "not-approved:70b",
+    })
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error"] == "model_not_allowed"
+    assert "validation_model" in resp.json()["detail"]["message"]
+
+
+def test_meta_exposes_allowed_validator_models(client, monkeypatch):
+    monkeypatch.setattr(
+        routes,
+        "get_settings",
+        lambda: Settings(
+            rca_model="demo-writer:1b",
+            validation_model="demo-validator:2b",
+            allowed_validation_models=("demo-validator:2b", "demo-writer:1b"),
+        ),
+    )
+
+    meta = client.get("/ui/meta").json()
+
+    assert meta["models"]["allowed_validator_models"] == ["demo-validator:2b", "demo-writer:1b"]
+
+
+def test_job_history_metrics_categorize_failures(client, monkeypatch, tmp_path):
+    settings = Settings(
+        output_dir=tmp_path,
+        job_history_path=tmp_path / "hist.sqlite",
+        validation_enabled=False,
+    )
+    monkeypatch.setattr(routes, "get_settings", lambda: settings)
+    monkeypatch.setattr(jobs, "get_settings", lambda: settings)
+    jobs.manager.set_agent_factory(lambda s: FailAgent(s))
+
+    resp = client.post("/ui/analyze", json={
+        "problem_statement": "Some incident statement long enough to pass",
+        "method": "five_why",
+    })
+    _drain(client, resp.json()["job_id"])
+
+    from web.history import JobHistoryStore
+
+    metrics = JobHistoryStore(settings).metrics()
+    assert metrics["failed_runs"] == 1
+    assert metrics["failed_by_type"] == {"provider_unreachable": 1}
+
+
 def test_compare_two_methods_runs_both(client):
     resp = client.post("/ui/analyze", json={
         "problem_statement": "Login API returns HTTP 500 after a deploy",

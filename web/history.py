@@ -243,6 +243,12 @@ class JobHistoryStore:
                 total_runs = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
                 completed = conn.execute("SELECT COUNT(*) FROM runs WHERE done = 1 AND error_json IS NULL").fetchone()[0]
                 failed = conn.execute("SELECT COUNT(*) FROM runs WHERE error_json IS NOT NULL").fetchone()[0]
+                failed_by_type: dict[str, int] = {}
+                for row in conn.execute("SELECT error_json FROM runs WHERE error_json IS NOT NULL"):
+                    error = _loads(row["error_json"], {})
+                    error_type = error.get("error_type") if isinstance(error, dict) else None
+                    key = error_type if isinstance(error_type, str) and error_type else "unclassified"
+                    failed_by_type[key] = failed_by_type.get(key, 0) + 1
                 latencies: list[float] = []
                 for row in conn.execute("SELECT report_json FROM runs WHERE report_json IS NOT NULL"):
                     report = _loads(row["report_json"], {})
@@ -255,6 +261,7 @@ class JobHistoryStore:
                 "total_runs": total_runs,
                 "completed_runs": completed,
                 "failed_runs": failed,
+                "failed_by_type": dict(sorted(failed_by_type.items(), key=lambda item: -item[1])),
                 "average_latency_seconds": avg_latency,
             }
         except Exception as exc:  # noqa: BLE001
@@ -263,6 +270,7 @@ class JobHistoryStore:
                 "total_runs": None,
                 "completed_runs": None,
                 "failed_runs": None,
+                "failed_by_type": None,
                 "average_latency_seconds": None,
                 "warning": f"{type(exc).__name__}: {exc}",
             }

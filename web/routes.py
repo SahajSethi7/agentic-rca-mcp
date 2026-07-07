@@ -25,6 +25,7 @@ from auth import AuthContext, require_permission
 from config import get_settings
 from memory import get_past_rca_memory_count
 from model_status import (
+    allowed_validator_models,
     allowed_writer_models,
     configured_validator_model,
     configured_writer_model,
@@ -47,6 +48,7 @@ class AnalyzeRequest(BaseModel):
     severity: str | None = None
     system_area: str | None = None
     generation_model: str | None = None
+    validation_model: str | None = None
 
 
 def _methods_for(req: AnalyzeRequest) -> list[str]:
@@ -80,6 +82,7 @@ def meta(auth: AuthContext = Depends(require_permission("rca:read"))) -> dict:
             "writer": configured_writer_model(settings),
             "validator": configured_validator_model(settings),
             "allowed_writer_models": list(allowed_writer_models(settings)),
+            "allowed_validator_models": list(allowed_validator_models(settings)),
         },
         "provider": settings.provider,
         "validation": {
@@ -120,6 +123,19 @@ def analyze(
             detail={
                 "error": "model_not_allowed",
                 "message": f"generation_model must be one of: {allowed_label}",
+            },
+        )
+    allowed_validators = allowed_validator_models(settings)
+    if req.validation_model and req.validation_model not in allowed_validators:
+        allowed_label = (
+            ", ".join(allowed_validators)
+            or "no models are configured; set VALIDATION_MODEL or RCA_ALLOWED_VALIDATION_MODELS"
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "model_not_allowed",
+                "message": f"validation_model must be one of: {allowed_label}",
             },
         )
     payload = req.model_dump()

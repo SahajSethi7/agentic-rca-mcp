@@ -130,6 +130,7 @@ export interface UiMeta {
     writer: string;
     validator: string;
     allowed_writer_models?: string[];
+    allowed_validator_models?: string[];
   };
   provider?: string;
   validation?: {
@@ -182,12 +183,16 @@ export interface ModelStatus {
       node_count?: number | null;
       edge_count?: number | null;
       record_count?: number | null;
+      built_at?: string | null;
+      source_path?: string | null;
       warning?: string | null;
     };
   };
   system_memory: {
     available_mb: number | null;
     total_mb: number | null;
+    recommended_mb?: number | null;
+    below_recommended?: boolean;
     warning?: string | null;
   };
   output_storage?: {
@@ -202,6 +207,7 @@ export interface ModelStatus {
     total_runs: number | null;
     completed_runs: number | null;
     failed_runs: number | null;
+    failed_by_type?: Record<string, number> | null;
     average_latency_seconds: number | null;
     warning?: string | null;
   };

@@ -45,10 +45,12 @@ The UI needs the API running, and the API needs a model to talk to.
 
 3. Confirm your `.env` points at the provider you want (`LLM_PROVIDER`,
    `RCA_MODEL`, etc.). For UI model selection, set `RCA_ALLOWED_MODELS`
-   to the local writer models users may choose, for example:
+   to the local writer models users may choose, and optionally set
+   `RCA_ALLOWED_VALIDATION_MODELS` for reviewer models:
 
    ```text
    RCA_ALLOWED_MODELS=qwen3:8b,qwen3.5:4b
+   RCA_ALLOWED_VALIDATION_MODELS=llama3.2:latest
    ```
 
 4. Confirm the demo Excel memory exists:
@@ -112,6 +114,9 @@ The left-hand panel is the input form.
   Missing models are marked unavailable when the model-status endpoint can
   confirm the Ollama catalog. The selection applies only to this run; it does
   not rewrite `.env` or require a Docker rebuild.
+- **Validator model** - choose the per-run reviewer model when validation is
+  enabled. It follows the same allowlist and availability rules as writer model
+  selection, using `RCA_ALLOWED_VALIDATION_MODELS`.
 - **Severity** (optional) — low / medium / high / critical. Click again to
   clear it. Severity shifts the emphasis of the analysis.
 - **System area** (optional) — e.g. `payments`, `auth`, `batch jobs`.
@@ -148,6 +153,12 @@ of minutes depending on your hardware and model. That is expected.
 The stepper streams over Server-Sent Events. If your browser or a proxy blocks
 SSE, the UI automatically falls back to polling — you do not need to do
 anything.
+
+The Settings page shows the same operator health data used by the form:
+allowlisted model availability, memory graph source workbook and last-built
+timestamp, job-history totals with failed-run breakdowns by error type, disk
+usage, and system memory. `RCA_RECOMMENDED_MEMORY_MB` controls the soft memory
+warning threshold.
 
 ---
 
@@ -213,6 +224,8 @@ frame the same incident.
 - **Writer model is disabled in the dropdown** - the model is allowlisted but
   was not returned by the Ollama catalog. Pull it with `ollama pull <model>` or
   remove it from `RCA_ALLOWED_MODELS`.
+- **Validator model is disabled in the dropdown** - pull the validator model in
+  the same Ollama environment or remove it from `RCA_ALLOWED_VALIDATION_MODELS`.
 - **"provider auth" error** — a hosted endpoint rejected your key (HTTP 401).
 - **The page is blank or shows raw JSON** — open `http://127.0.0.1:8000/`
   (the root), not `/rca`.

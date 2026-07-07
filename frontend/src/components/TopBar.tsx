@@ -50,9 +50,6 @@ export default function TopBar({
   onSettings: () => void;
 }) {
   const auth = useAppAuth();
-  const writer = uiMeta?.models?.writer ?? "checking";
-  const validator = uiMeta?.validation?.model ?? uiMeta?.models?.validator ?? "checking";
-  const validationEnabled = uiMeta?.validation?.enabled ?? true;
   const canAudit = !auth.enabled || auth.hasPermission(AUTH_PERMISSIONS.audit);
   const canAdmin = !auth.enabled || auth.hasPermission(AUTH_PERMISSIONS.admin);
   const userLabel = auth.user?.name || auth.user?.email || "Signed in";
@@ -65,12 +62,6 @@ export default function TopBar({
           <p className="truncate text-caption text-ink-muted">Local Workspace</p>
         </div>
         <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
-          <StatusBadge label="Writer" value={writer} />
-          <StatusBadge
-            label="Validator"
-            value={validationEnabled ? validator : "off"}
-            tone={validationEnabled ? "green" : "amber"}
-          />
           <StatusBadge label="Mode" value={uiMeta?.provider === "hosted" ? "hosted provider" : "local model"} tone="green" />
           <StatusBadge label="Build" value="v1.0.0 local" tone="amber" />
         </div>

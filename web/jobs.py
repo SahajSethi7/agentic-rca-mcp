@@ -212,8 +212,12 @@ class JobManager:
 
     def _run_one(self, job: Job, run: RunState, settings: Settings, job_dir: Path) -> None:
         payload = job.payload
-        selected_model = payload.get("generation_model")
-        run_settings = replace(settings, rca_model=selected_model) if selected_model else settings
+        overrides: dict[str, Any] = {}
+        if payload.get("generation_model"):
+            overrides["rca_model"] = payload["generation_model"]
+        if payload.get("validation_model"):
+            overrides["validation_model"] = payload["validation_model"]
+        run_settings = replace(settings, **overrides) if overrides else settings
         run.generation_model = run_settings.rca_model
 
         def on_event(stage: str, info: dict[str, Any]) -> None:

@@ -45,6 +45,7 @@ It provides:
 - matching past-RCA Excel export when memory matches are available
 - two-method comparison
 - writer-model selection from `RCA_ALLOWED_MODELS`
+- validator-model selection from `RCA_ALLOWED_VALIDATION_MODELS`
 - persisted job and audit history after backend restarts
 - operator health checks for models, memory graph freshness, history, disk, and
   system memory
@@ -218,6 +219,7 @@ LLM_PROVIDER
 OLLAMA_BASE_URL
 RCA_MODEL
 RCA_ALLOWED_MODELS
+RCA_ALLOWED_VALIDATION_MODELS
 HOSTED_OPEN_BASE_URL
 HOSTED_OPEN_API_KEY
 HOSTED_OPEN_MODEL
@@ -232,9 +234,13 @@ Recommended local models:
 
 For the web UI, `RCA_MODEL` is the default selected writer model and
 `RCA_ALLOWED_MODELS` is the strict allowlist of selectable local writer models.
-`POST /ui/analyze` accepts an optional `generation_model`; the backend rejects
-values outside the allowlist and creates per-run settings without mutating
-`.env`, global settings, or Docker configuration.
+`VALIDATION_MODEL` is the default reviewer model, while
+`RCA_ALLOWED_VALIDATION_MODELS` defines selectable reviewer models; when the
+validator allowlist is empty, the configured validator remains the only
+selectable option. `POST /ui/analyze` accepts optional `generation_model` and
+`validation_model` values. The backend rejects values outside their allowlists
+with HTTP 422 and creates per-run settings without mutating `.env`, global
+settings, or Docker configuration.
 
 The default generation budget is `RCA_MAX_OUTPUT_TOKENS=4096`. Qwen3 prompts
 receive the `/no_think` soft switch so the Ollama OpenAI-compatible endpoint
@@ -254,7 +260,8 @@ and status.
 
 Memory retrieval is local and bounded. The Excel workbook remains the source of
 truth; `OUTPUT_DIR/cache/rca_memory_graph.sqlite` is a derived cache that can be
-rebuilt when the workbook changes.
+rebuilt when the workbook changes. Graph metadata records the source workbook
+path and build timestamp so the UI can report when the cache was last built.
 
 ```text
 RCAInput
@@ -330,7 +337,7 @@ Provider recovery is deliberately conservative:
 | Audit trail | `utils.append_audit_record()` writes JSONL records with hashed problem text and run metadata. |
 | Durable web history | `web/history.py` stores jobs, runs, events, artifacts, selected models, and mirrored audit records in SQLite. |
 | Bounded retention | Job history pruning also removes now-unreachable per-job artifacts from `OUTPUT_DIR/ui/<job_id>`. |
-| Model allowlist | `/ui/analyze` rejects writer models not present in `RCA_ALLOWED_MODELS`. |
+| Model allowlist | `/ui/analyze` rejects writer models not present in `RCA_ALLOWED_MODELS` and validator models not present in `RCA_ALLOWED_VALIDATION_MODELS`. |
 
 ## Artifacts
 
@@ -396,13 +403,16 @@ CI runs linting, tests, and Docker image build checks.
 - allowlisted writer-model availability
 - memory workbook health
 - graph cache existence, freshness, node count, and edge count
-- durable job-history metrics
+- graph cache source workbook and last-built timestamp
+- durable job-history metrics, including failed-run counts by error type
 - output disk usage
-- system memory
+- system memory and the `RCA_RECOMMENDED_MEMORY_MB` stability threshold
 
 This endpoint is intentionally diagnostic: it can report an endpoint as
 reachable while still marking overall readiness false when the selected model is
-not pulled.
+not pulled. Low-memory warnings are intentionally soft: they indicate that
+performance may degrade below the recommended threshold rather than treating the
+backend as unhealthy.
 
 ## System Boundaries
 
@@ -413,7 +423,7 @@ The system currently:
 - retrieves similar records from a local Excel memory with graph-boosted hybrid
   ranking
 - optionally writes generated RCAs back to the memory workbook
-- lets the web UI select a per-run allowlisted local writer model
+- lets the web UI select per-run allowlisted local writer and validator models
 - uses local or hosted OpenAI-compatible models
 - validates output with Pydantic
 - runs deterministic critique and bounded revision

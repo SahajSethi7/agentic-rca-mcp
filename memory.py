@@ -284,6 +284,10 @@ def _rebuild_graph_index(conn: sqlite3.Connection, memory_path: Path, records: l
     for key, value in _memory_fingerprint(memory_path).items():
         conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)", (key, value))
     conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)", ("record_count", str(len(records))))
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES (?, ?)",
+        ("built_at", datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
 
 
 def ensure_memory_graph_index(
@@ -299,8 +303,13 @@ def ensure_memory_graph_index(
     conn = sqlite3.connect(graph_path)
     try:
         _init_graph_schema(conn)
-        if _graph_meta(conn) != {**expected, "record_count": str(len(records))}:
+        expected_meta = {**expected, "record_count": str(len(records))}
+        meta = _graph_meta(conn)
+        # Subset comparison: informational keys such as built_at must not
+        # invalidate an otherwise-fresh index.
+        if any(meta.get(key) != value for key, value in expected_meta.items()):
             _rebuild_graph_index(conn, memory_path, records)
+            meta = _graph_meta(conn)
             rebuilt = True
         else:
             rebuilt = False
@@ -318,6 +327,8 @@ def ensure_memory_graph_index(
         "node_count": node_count,
         "edge_count": edge_count,
         "record_count": len(records),
+        "built_at": meta.get("built_at"),
+        "source_path": meta.get("source_path"),
         "warning": None,
     }
 
@@ -331,6 +342,8 @@ def get_memory_graph_status(memory_path: Path, graph_path: Path, *, enabled: boo
         "node_count": None,
         "edge_count": None,
         "record_count": None,
+        "built_at": None,
+        "source_path": None,
         "warning": None,
     }
     if not enabled:
@@ -349,6 +362,8 @@ def get_memory_graph_status(memory_path: Path, graph_path: Path, *, enabled: boo
             meta = _graph_meta(conn)
             status["fresh"] = all(meta.get(key) == value for key, value in expected.items())
             status["record_count"] = int(meta.get("record_count", "0") or 0)
+            status["built_at"] = meta.get("built_at")
+            status["source_path"] = meta.get("source_path")
             status["node_count"] = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
             status["edge_count"] = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
             conn.commit()

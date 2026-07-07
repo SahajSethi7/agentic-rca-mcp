@@ -27,6 +27,7 @@ export interface AnalyzePayload {
   severity?: string | null;
   system_area?: string | null;
   generation_model?: string | null;
+  validation_model?: string | null;
 }
 
 export async function startAnalyze(payload: AnalyzePayload): Promise<AnalyzeResponse> {

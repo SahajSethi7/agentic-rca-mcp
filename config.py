@@ -35,6 +35,9 @@ class Settings:
     hosted_api_key: str | None = os.getenv("HOSTED_OPEN_API_KEY")
     hosted_model: str | None = os.getenv("HOSTED_OPEN_MODEL")
     validation_model: str | None = os.getenv("VALIDATION_MODEL")
+    # Empty default: falls back to the configured validator at lookup time
+    # (see model_status.allowed_validator_models).
+    allowed_validation_models: tuple[str, ...] = _env_tuple("RCA_ALLOWED_VALIDATION_MODELS", "")
     prompt_version: str = os.getenv("RCA_PROMPT_VERSION", "v3")
     max_retries: int = int(os.getenv("RCA_MAX_RETRIES", "2"))
     max_output_tokens: int = int(os.getenv("RCA_MAX_OUTPUT_TOKENS", "4096"))
@@ -59,6 +62,7 @@ class Settings:
     job_history_path: Path = Path(os.getenv("RCA_JOB_HISTORY_PATH", "./outputs/app_state.sqlite"))
     job_history_max_jobs: int = int(os.getenv("RCA_JOB_HISTORY_MAX_JOBS", "200"))
     job_history_retention_days: int = int(os.getenv("RCA_JOB_HISTORY_RETENTION_DAYS", "30"))
+    recommended_memory_mb: int = int(os.getenv("RCA_RECOMMENDED_MEMORY_MB", "8192"))
     eval_models: tuple[str, ...] = tuple(
         model.strip()
         for model in os.getenv("RCA_EVAL_MODELS", "qwen3:8b,llama3.2:latest").split(",")

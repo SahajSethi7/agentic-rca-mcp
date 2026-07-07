@@ -626,6 +626,37 @@ function modelStatusText(probe?: ModelStatus["writer"] | ModelStatus["validator"
   return probe.error || "Unavailable";
 }
 
+const ERROR_TYPE_LABEL: Record<string, string> = {
+  provider_timeout: "timeout",
+  provider_unreachable: "endpoint unreachable",
+  provider_auth: "auth",
+  model_output_invalid: "model output",
+  invalid_input: "invalid input",
+  write_denied: "write denied",
+  internal_error: "internal",
+  job_interrupted: "interrupted",
+  unclassified: "unclassified",
+};
+
+function failureBreakdown(byType?: Record<string, number> | null) {
+  if (!byType) return "";
+  return Object.entries(byType)
+    .map(([type, count]) => `${count} ${ERROR_TYPE_LABEL[type] ?? type.replace(/_/g, " ")}`)
+    .join(" · ");
+}
+
+function graphStatusText(graph?: NonNullable<ModelStatus["memory"]["graph"]>) {
+  if (!graph || graph.enabled === false) return "Disabled";
+  if (graph.node_count == null) return "Not built yet - builds on the next memory search";
+  const built = graph.built_at ? new Date(graph.built_at) : null;
+  const updatedLabel = built && !Number.isNaN(built.getTime())
+    ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(built)
+    : "unknown time";
+  const source = graph.source_path?.split(/[\\/]/).pop() || "Excel memory workbook";
+  const staleness = graph.fresh ? "" : " · stale, rebuilds on next memory search";
+  return `${graph.node_count} nodes · updated ${updatedLabel} · source: ${source}${staleness}`;
+}
+
 function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
   const [modelStatusError, setModelStatusError] = useState<string | null>(null);
@@ -659,13 +690,18 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
 
   const memoryReady = modelStatus?.memory?.healthy ?? modelStatus?.memory?.available ?? null;
   const graph = modelStatus?.memory?.graph;
-  const systemMemory = modelStatus?.system_memory.available_mb != null
-    ? `${modelStatus.system_memory.available_mb.toLocaleString()} MB available`
-    : (modelStatus?.system_memory.warning || "Unknown");
+  const sysMem = modelStatus?.system_memory;
+  const memoryHint = sysMem?.recommended_mb != null
+    ? ` · recommended ≥ ${sysMem.recommended_mb.toLocaleString()} MB for stable runs`
+    : "";
+  const systemMemory = sysMem?.available_mb != null
+    ? `${sysMem.available_mb.toLocaleString()} MB available${memoryHint}${sysMem.below_recommended ? " · performance may degrade" : ""}`
+    : (sysMem?.warning || "Unknown");
   const outputStorage = modelStatus?.output_storage?.free_mb != null
     ? `${modelStatus.output_storage.free_mb.toLocaleString()} MB free`
     : (modelStatus?.output_storage?.warning || "Unknown");
   const history = modelStatus?.job_history;
+  const failedDetail = failureBreakdown(history?.failed_by_type);
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
@@ -702,8 +738,10 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
               ["Writer", `${modelStatus?.writer.configured_model || uiMeta?.models?.writer || "checking"} - ${modelStatusText(modelStatus?.writer)}`],
               ["Validator", modelStatus?.validator.enabled === false ? "Off" : `${modelStatus?.validator.configured_model || uiMeta?.validation?.model || "checking"} - ${modelStatusText(modelStatus?.validator)}`],
               ["RCA memory", modelStatus?.memory.enabled === false ? "Disabled" : `${modelStatus?.memory.record_count ?? "checking"} records - ${memoryReady ? "available" : "needs attention"}`],
-              ["Memory graph", graph?.enabled === false ? "Disabled" : `${graph?.node_count ?? "not built"} nodes - ${graph?.fresh ? "fresh" : "stale/not built"}`],
-              ["Job history", history?.total_runs != null ? `${history.total_runs} runs (${history.failed_runs ?? 0} failed)` : "Checking"],
+              ["Memory graph", graphStatusText(graph)],
+              ["Job history", history?.total_runs != null
+                ? `${history.total_runs} runs (${history.failed_runs ?? 0} failed${failedDetail ? `: ${failedDetail}` : ""})`
+                : "Checking"],
               ["Output storage", outputStorage],
               ["System memory", systemMemory],
             ].map(([label, value]) => (
@@ -1268,6 +1306,7 @@ export default function App() {
           validatorModel={validatorModel}
           validationEnabled={validationEnabled}
           allowedWriterModels={uiMeta?.models?.allowed_writer_models ?? []}
+          allowedValidatorModels={uiMeta?.models?.allowed_validator_models ?? []}
           modelStatus={runtimeStatus}
         />
       );
