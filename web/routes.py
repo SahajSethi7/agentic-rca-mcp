@@ -17,14 +17,19 @@ import json
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from auth import AuthContext, require_permission
 from config import get_settings
 from memory import get_past_rca_memory_count
-from model_status import configured_validator_model, configured_writer_model, get_model_status
+from model_status import (
+    allowed_writer_models,
+    configured_validator_model,
+    configured_writer_model,
+    get_model_status,
+)
 from schemas import RCA_METHODS, RCAMethod
 from utils import append_audit_record, utc_now_iso
 from web.jobs import STAGES, Job, manager
@@ -41,6 +46,7 @@ class AnalyzeRequest(BaseModel):
     compare_method: RCAMethod | None = None
     severity: str | None = None
     system_area: str | None = None
+    generation_model: str | None = None
 
 
 def _methods_for(req: AnalyzeRequest) -> list[str]:
@@ -73,6 +79,7 @@ def meta(auth: AuthContext = Depends(require_permission("rca:read"))) -> dict:
         "models": {
             "writer": configured_writer_model(settings),
             "validator": configured_validator_model(settings),
+            "allowed_writer_models": list(allowed_writer_models(settings)),
         },
         "provider": settings.provider,
         "validation": {
@@ -104,6 +111,17 @@ def analyze(
     auth: AuthContext = Depends(require_permission("rca:write")),
 ) -> JSONResponse:
     """Start a background job and return its id immediately."""
+    settings = get_settings()
+    allowed = allowed_writer_models(settings)
+    if req.generation_model and req.generation_model not in allowed:
+        allowed_label = ", ".join(allowed) or "no models are configured; set RCA_ALLOWED_MODELS"
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "model_not_allowed",
+                "message": f"generation_model must be one of: {allowed_label}",
+            },
+        )
     payload = req.model_dump()
     payload["_actor"] = auth.audit_fields()
     job = manager.start(payload, _methods_for(req))
@@ -114,6 +132,41 @@ def analyze(
             "started_at": utc_now_iso(),
         }
     )
+
+
+@router.get("/ui/jobs")
+def list_jobs(
+    limit: int = Query(40, ge=1, le=200),
+    auth: AuthContext = Depends(require_permission("rca:read")),
+) -> dict:
+    """Return durable web job history from SQLite."""
+    _ = auth
+    return {"jobs": manager.history(limit=limit)}
+
+
+@router.get("/ui/jobs/{job_id}")
+def job_detail(
+    job_id: str,
+    auth: AuthContext = Depends(require_permission("rca:read")),
+) -> JSONResponse:
+    """Return a single durable job history record."""
+    _ = auth
+    job = manager.history_job(job_id)
+    if job is None:
+        return JSONResponse({"error": "unknown job"}, status_code=404)
+    return JSONResponse(job)
+
+
+@router.get("/ui/audit")
+def audit_history(
+    limit: int = Query(100, ge=1, le=500),
+    auth: AuthContext = Depends(require_permission("rca:audit")),
+) -> dict:
+    """Return persisted audit records."""
+    _ = auth
+    from web.history import JobHistoryStore
+
+    return {"records": JobHistoryStore(get_settings()).list_audit(limit=limit)}
 
 
 def _job_or_404(job_id: str) -> Job | None:
@@ -170,16 +223,10 @@ def status(
 
 
 def _run_artifact(job_id: str, index: int, kind: str):
-    job = _job_or_404(job_id)
-    if job is None or index >= len(job.runs):
+    path = manager.artifact_path(job_id, index, kind)
+    if path is None:
         return JSONResponse({"error": "unknown job/run"}, status_code=404)
-    run = job.runs[index]
-    path: Path | None = {
-        "pdf": run.pdf_path,
-        "html": run.html_path,
-        "xlsx": run.memory_matches_path,
-    }.get(kind)
-    if path is None or not Path(path).exists():
+    if not Path(path).exists():
         return JSONResponse({"error": "artifact not ready"}, status_code=404)
     return path
 
@@ -192,14 +239,26 @@ def _audit_artifact_access(
     auth: AuthContext,
 ) -> None:
     job = _job_or_404(job_id)
-    if job is None or index >= len(job.runs):
-        return
-    run = job.runs[index]
+    method = ""
+    problem_statement = ""
+    if job is not None and 0 <= index < len(job.runs):
+        run = job.runs[index]
+        method = run.method
+        problem_statement = job.payload.get("problem_statement", "")
+    else:
+        saved = manager.history_job(job_id)
+        if not saved:
+            return
+        problem_statement = saved.get("payload", {}).get("problem_statement", "")
+        for run in saved.get("runs", []):
+            if run.get("index") == index:
+                method = run.get("method", "")
+                break
     append_audit_record(
         settings=get_settings(),
         entry_point="web",
-        problem_statement=job.payload.get("problem_statement", ""),
-        method=run.method,
+        problem_statement=problem_statement,
+        method=method,
         success=True,
         action="artifact.access",
         artifact_kind=kind,

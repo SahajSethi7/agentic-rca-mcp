@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import shutil
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -13,7 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from config import Settings, get_settings
-from memory import get_past_rca_memory_count
+from memory import get_memory_graph_status, get_past_rca_memory_count
+from web.history import JobHistoryStore
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,11 @@ def configured_writer_model(settings: Settings) -> str:
     if settings.provider == "hosted":
         return settings.hosted_model or settings.validation_model or ""
     return settings.rca_model
+
+
+def allowed_writer_models(settings: Settings) -> tuple[str, ...]:
+    allowed = [model for model in settings.allowed_models if model]
+    return tuple(dict.fromkeys(allowed))
 
 
 def configured_validator_model(settings: Settings) -> str:
@@ -138,11 +145,23 @@ def _probe_model(
         "configured_model": model_name,
         "backend": backend.name,
         "endpoint": catalog.get("url"),
-        "reachable": bool(catalog.get("reachable")) and available is not False and bool(model_name),
+        "reachable": bool(catalog.get("reachable")),
         "available": available,
         "catalog_count": len(model_ids),
         "error": error,
     }
+
+
+def _allowed_model_status(settings: Settings, catalog: dict[str, Any]) -> list[dict[str, Any]]:
+    model_ids = catalog.get("model_ids") or []
+    return [
+        {
+            "model": model,
+            "available": model in model_ids if model_ids else None,
+            "selected": model == configured_writer_model(settings),
+        }
+        for model in allowed_writer_models(settings)
+    ]
 
 
 def _memory_status(settings: Settings) -> dict[str, Any]:
@@ -168,6 +187,11 @@ def _memory_status(settings: Settings) -> dict[str, Any]:
         status["healthy"] = True
     except Exception as exc:  # noqa: BLE001 - readiness endpoint should explain, not crash.
         status["warning"] = f"{type(exc).__name__}: {exc}"
+    status["graph"] = get_memory_graph_status(
+        path,
+        settings.memory_graph_path,
+        enabled=settings.memory_graph_enabled and settings.memory_enabled,
+    )
     return status
 
 
@@ -225,6 +249,28 @@ def _system_memory_status() -> dict[str, Any]:
         }
 
 
+def _output_storage_status(settings: Settings) -> dict[str, Any]:
+    try:
+        target = settings.output_dir
+        target.mkdir(parents=True, exist_ok=True)
+        usage = shutil.disk_usage(target)
+        return {
+            "path": str(target),
+            "total_mb": usage.total // (1024 * 1024),
+            "used_mb": usage.used // (1024 * 1024),
+            "free_mb": usage.free // (1024 * 1024),
+            "warning": None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "path": str(settings.output_dir),
+            "total_mb": None,
+            "used_mb": None,
+            "free_mb": None,
+            "warning": f"{type(exc).__name__}: {exc}",
+        }
+
+
 def get_model_status(settings: Settings | None = None) -> dict[str, Any]:
     settings = settings or get_settings()
     writer_backend = _writer_backend(settings)
@@ -241,6 +287,7 @@ def get_model_status(settings: Settings | None = None) -> dict[str, Any]:
         backend=writer_backend,
         catalog=catalogs[writer_backend],
     )
+    writer["allowed_models"] = _allowed_model_status(settings, catalogs[writer_backend])
     if settings.validation_enabled:
         validator = {
             "enabled": True,
@@ -265,18 +312,37 @@ def get_model_status(settings: Settings | None = None) -> dict[str, Any]:
         }
 
     memory = _memory_status(settings)
+    history_store = JobHistoryStore(settings)
+    history_metrics = history_store.metrics()
+    allowed = allowed_writer_models(settings)
+    configured_model = configured_writer_model(settings)
+    configured_not_allowed = (
+        f"Configured writer model {configured_model!r} is not in RCA_ALLOWED_MODELS."
+        if configured_model and configured_model not in allowed
+        else None
+    )
     warnings = [
         item
         for item in [
             writer.get("error"),
+            configured_not_allowed,
             validator.get("error") if settings.validation_enabled else None,
             memory.get("warning") if not memory.get("healthy") else None,
+            memory.get("graph", {}).get("warning") if isinstance(memory.get("graph"), dict) else None,
+            history_metrics.get("warning"),
         ]
         if item
     ]
-    ready = bool(writer["reachable"]) and (
-        not settings.validation_enabled or bool(validator["reachable"])
-    ) and bool(memory["healthy"])
+    writer_ready = bool(writer["reachable"]) and bool(writer["configured_model"]) and writer.get("available") is not False
+    validator_ready = (
+        not settings.validation_enabled
+        or (
+            bool(validator["reachable"])
+            and bool(validator["configured_model"])
+            and validator.get("available") is not False
+        )
+    )
+    ready = writer_ready and validator_ready and bool(memory["healthy"])
 
     return {
         "checked_at": datetime.now(timezone.utc).isoformat(),
@@ -289,4 +355,6 @@ def get_model_status(settings: Settings | None = None) -> dict[str, Any]:
         "validator": validator,
         "memory": memory,
         "system_memory": _system_memory_status(),
+        "output_storage": _output_storage_status(settings),
+        "job_history": history_metrics,
     }

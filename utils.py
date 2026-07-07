@@ -225,6 +225,12 @@ def append_audit_record(
         path = audit_log_path(settings)
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, default=str) + "\n")
+        try:
+            from web.history import record_audit_history
+
+            record_audit_history(record, settings)
+        except Exception:
+            logger.warning("Audit history write failed; continuing.", exc_info=True)
     except Exception:
         logger.warning("Audit log write failed; continuing.", exc_info=True)
         return None

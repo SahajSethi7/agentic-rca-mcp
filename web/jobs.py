@@ -13,12 +13,12 @@ and is audit-logged exactly like every other entry point.
 
 from __future__ import annotations
 
-import shutil
 import threading
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from time import time
 from typing import Any, Callable
 
 from config import Settings, get_settings
@@ -27,6 +27,7 @@ from memory import build_memory_matches_workbook
 from pdf_generator import build_pdf
 from schemas import RCAReport
 from utils import append_audit_record, classify_exception, enforce_output_path
+from web.history import JobHistoryStore
 
 # Stage -> human label + ordinal, shared with the front-end stepper.
 STAGES: tuple[str, ...] = (
@@ -67,17 +68,40 @@ class RunState:
     html_path: Path | None = None
     json_path: Path | None = None
     memory_matches_path: Path | None = None
+    report_json: dict[str, Any] | None = None
+    generation_model: str | None = None
+    created_at_ms: int = 0
+    updated_at_ms: int = 0
+    completed_at_ms: int | None = None
     done: bool = False
 
 
 class Job:
     """A unit of UI work: one problem analysed by one or two methods."""
 
-    def __init__(self, job_id: str, payload: dict[str, Any], methods: list[str]) -> None:
+    def __init__(
+        self,
+        job_id: str,
+        payload: dict[str, Any],
+        methods: list[str],
+        *,
+        settings: Settings,
+        history: JobHistoryStore,
+    ) -> None:
         self.id = job_id
         self.payload = payload
+        self.settings = settings
+        self.history = history
+        self.created_at_ms = int(time() * 1000)
         self.runs: list[RunState] = [
-            RunState(index=i, method=m) for i, m in enumerate(methods)
+            RunState(
+                index=i,
+                method=m,
+                generation_model=payload.get("generation_model") or settings.rca_model,
+                created_at_ms=self.created_at_ms,
+                updated_at_ms=self.created_at_ms,
+            )
+            for i, m in enumerate(methods)
         ]
         self.events: list[dict[str, Any]] = []
         self.done = False
@@ -87,6 +111,7 @@ class Job:
     def emit(self, event: dict[str, Any]) -> None:
         with self._lock:
             self.events.append(event)
+        self.history.append_event(self.id, event)
 
     def events_since(self, cursor: int) -> tuple[list[dict[str, Any]], int, bool]:
         with self._lock:
@@ -95,6 +120,7 @@ class Job:
     def mark_done(self) -> None:
         with self._lock:
             self.done = True
+        self.history.mark_done(self.id)
 
 
 class JobManager:
@@ -124,22 +150,34 @@ class JobManager:
         with self._lock:
             self._jobs[job.id] = job
             while len(self._jobs) > MAX_RETAINED_JOBS:
-                old_id, _ = self._jobs.popitem(last=False)
-                self._purge_artifacts(old_id)
-
-    def _purge_artifacts(self, job_id: str) -> None:
-        try:
-            settings = get_settings()
-            shutil.rmtree(settings.output_dir / "ui" / job_id, ignore_errors=True)
-        except Exception:
-            pass
+                self._jobs.popitem(last=False)
+        job.history.record_job(job)
 
     def start(self, payload: dict[str, Any], methods: list[str]) -> Job:
-        job = Job(uuid.uuid4().hex[:12], payload, methods)
+        settings = get_settings()
+        history = JobHistoryStore(settings)
+        job = Job(uuid.uuid4().hex[:12], payload, methods, settings=settings, history=history)
         self._retain(job)
         thread = threading.Thread(target=self._run_job, args=(job,), daemon=True)
         thread.start()
         return job
+
+    def history(self, *, limit: int = 40) -> list[dict[str, Any]]:
+        return JobHistoryStore(get_settings()).list_jobs(limit=limit)
+
+    def history_job(self, job_id: str) -> dict[str, Any] | None:
+        return JobHistoryStore(get_settings()).get_job(job_id)
+
+    def artifact_path(self, job_id: str, index: int, kind: str) -> Path | None:
+        live = self.get(job_id)
+        if live is not None and 0 <= index < len(live.runs):
+            run = live.runs[index]
+            return {
+                "pdf": run.pdf_path,
+                "html": run.html_path,
+                "xlsx": run.memory_matches_path,
+            }.get(kind)
+        return JobHistoryStore(get_settings()).artifact_path(job_id, index, kind)
 
     # -- the worker -------------------------------------------------------- #
     def _run_job(self, job: Job) -> None:
@@ -147,7 +185,7 @@ class JobManager:
         # terminal state (emit "complete" + mark done) so the UI never hangs
         # waiting on a worker thread that died.
         try:
-            settings = get_settings()
+            settings = job.settings
             job_dir = settings.output_dir / "ui" / job.id
             for run in job.runs:
                 try:
@@ -157,6 +195,9 @@ class JobManager:
                     run.error = structured.model_dump()
                     run.done = True
                     run.stage = "error"
+                    run.updated_at_ms = int(time() * 1000)
+                    run.completed_at_ms = run.updated_at_ms
+                    job.history.update_run(run, job_id=job.id)
                     job.emit(
                         {
                             "type": "error",
@@ -171,6 +212,9 @@ class JobManager:
 
     def _run_one(self, job: Job, run: RunState, settings: Settings, job_dir: Path) -> None:
         payload = job.payload
+        selected_model = payload.get("generation_model")
+        run_settings = replace(settings, rca_model=selected_model) if selected_model else settings
+        run.generation_model = run_settings.rca_model
 
         def on_event(stage: str, info: dict[str, Any]) -> None:
             # The agent emits "done" before artifacts are rendered; for the UI
@@ -178,8 +222,10 @@ class JobManager:
             # and let the runner's "rendering" -> "result" sequence finish out.
             if stage == "done":
                 return
+            now = int(time() * 1000)
             run.stage = stage
             run.round = info.get("round")
+            run.updated_at_ms = now
             details = {
                 key: info[key]
                 for key in ("detail", "substeps", "files", "rationale")
@@ -195,13 +241,14 @@ class JobManager:
                     **details,
                 }
             )
+            job.history.update_run(run, job_id=job.id)
 
         # Build the agent *inside* the guarded block: if construction (or an
         # injected factory) raises, the failure must still become a clean error
         # event, not a silently dead worker thread that leaves the job stuck.
         agent = None
         try:
-            agent = self._build_agent(settings)
+            agent = self._build_agent(run_settings)
             report: RCAReport = agent.run(
                 payload["problem_statement"],
                 context=payload.get("context"),
@@ -212,6 +259,8 @@ class JobManager:
             )
 
             run.stage = "rendering"
+            run.updated_at_ms = int(time() * 1000)
+            job.history.update_run(run, job_id=job.id)
             job.emit(
                 {
                     "type": "stage",
@@ -267,6 +316,7 @@ class JobManager:
                 "prompt_version": report.prompt_version,
                 "latency_seconds": report.latency_seconds,
             }
+            run.report_json = report.model_dump(mode="json")
             run.html = html_doc
             run.pdf_path = pdf_path
             run.html_path = html_path
@@ -274,10 +324,13 @@ class JobManager:
             run.memory_matches_path = memory_matches_path
             run.done = True
             run.stage = "done"
+            run.updated_at_ms = int(time() * 1000)
+            run.completed_at_ms = run.updated_at_ms
+            job.history.update_run(run, job_id=job.id)
 
             stats = getattr(agent, "last_run_stats", {})
             append_audit_record(
-                settings=settings,
+                settings=run_settings,
                 entry_point="web",
                 problem_statement=payload["problem_statement"],
                 method=run.method,
@@ -310,15 +363,18 @@ class JobManager:
             run.error = structured.model_dump()
             run.done = True
             run.stage = "error"
+            run.updated_at_ms = int(time() * 1000)
+            run.completed_at_ms = run.updated_at_ms
+            job.history.update_run(run, job_id=job.id)
             stats = getattr(agent, "last_run_stats", {})
             append_audit_record(
-                settings=settings,
+                settings=run_settings,
                 entry_point="web",
                 problem_statement=payload.get("problem_statement", ""),
                 method=run.method,
                 success=False,
                 generation_model=stats.get("generation_model"),
-                prompt_version=settings.prompt_version,
+                prompt_version=run_settings.prompt_version,
                 rounds=stats.get("rounds"),
                 sanitizer_findings=stats.get("sanitizer_findings"),
                 error_type=structured.error_type,

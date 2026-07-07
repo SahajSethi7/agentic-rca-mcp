@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from statistics import mean
 from time import perf_counter
@@ -14,9 +14,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from agent.orchestrator import RCAAgent
 from config import Settings, get_settings
 from providers.ollama_provider import OllamaProvider
-from rca_agent import generate_rca
 from schemas import RCAReport
 
 INCIDENTS = [
@@ -28,15 +28,19 @@ INCIDENTS = [
 
 
 def load_golden_incidents(path: Path = REPO_ROOT / "eval" / "golden_set.jsonl") -> list[str]:
-    """Load incident prompts from the golden set, falling back to built-ins."""
+    """Load incident prompts from the golden set, falling back to built-ins.
+
+    Always returns a fresh list so callers can extend it without mutating the
+    module-level ``INCIDENTS`` fallback.
+    """
     if not path.exists():
-        return INCIDENTS
+        return list(INCIDENTS)
     incidents: list[str] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         incidents.append(json.loads(line)["problem"])
-    return incidents or INCIDENTS
+    return incidents or list(INCIDENTS)
 
 PROCESS_TERMS = {
     "process",
@@ -62,6 +66,8 @@ PROCESS_TERMS = {
 class EvalRow:
     model: str
     incident: str
+    method: str
+    prompt_version: str
     valid_schema: int
     why_score: float
     deepening_score: float
@@ -70,6 +76,10 @@ class EvalRow:
     latency_score: float
     latency_seconds: float
     total: float
+    memory_retrieval_mode: str
+    memory_match_count: int
+    memory_top_score: float
+    validation_downgraded: int
     root_cause: str
     error: str = ""
 
@@ -115,23 +125,33 @@ def score_report(report: RCAReport, latency_seconds: float) -> tuple[float, floa
     return why_score, deepening_score, root_cause_score, recommendation_score, latency_score, total
 
 
-def evaluate_model(model: str, settings: Settings, incidents: list[str]) -> list[EvalRow]:
-    provider = OllamaProvider(settings=settings, model=model)
+def _validation_downgraded(report: RCAReport) -> int:
+    return int(any("validator" in note.lower() for note in report.validation_notes) and report.confidence != "high")
+
+
+def evaluate_model(model: str, settings: Settings, incidents: list[str], *, method: str) -> list[EvalRow]:
+    run_settings = replace(settings, rca_model=model)
+    provider = OllamaProvider(settings=run_settings, model=model)
     rows: list[EvalRow] = []
 
     for incident in incidents:
         started = perf_counter()
         try:
-            report = generate_rca(incident, provider=provider, settings=settings)
+            agent = RCAAgent(settings=run_settings, provider=provider)
+            report = agent.run(incident, method=method)
             latency_seconds = round(perf_counter() - started, 3)
             why_score, deepening_score, root_score, rec_score, latency_score, total = score_report(
                 report,
                 latency_seconds,
             )
+            memory_matches = report.known_issue_matches or []
+            stats = getattr(agent, "last_run_stats", {})
             rows.append(
                 EvalRow(
                     model=model,
                     incident=incident,
+                    method=method,
+                    prompt_version=run_settings.prompt_version,
                     valid_schema=2,
                     why_score=why_score,
                     deepening_score=deepening_score,
@@ -140,6 +160,10 @@ def evaluate_model(model: str, settings: Settings, incidents: list[str]) -> list
                     latency_score=latency_score,
                     latency_seconds=latency_seconds,
                     total=total,
+                    memory_retrieval_mode=str(stats.get("memory_retrieval_mode") or "disabled"),
+                    memory_match_count=len(memory_matches),
+                    memory_top_score=memory_matches[0].similarity_score if memory_matches else 0.0,
+                    validation_downgraded=_validation_downgraded(report),
                     root_cause=report.root_cause,
                 )
             )
@@ -148,6 +172,8 @@ def evaluate_model(model: str, settings: Settings, incidents: list[str]) -> list
                 EvalRow(
                     model=model,
                     incident=incident,
+                    method=method,
+                    prompt_version=settings.prompt_version,
                     valid_schema=0,
                     why_score=0,
                     deepening_score=0,
@@ -156,6 +182,10 @@ def evaluate_model(model: str, settings: Settings, incidents: list[str]) -> list
                     latency_score=0,
                     latency_seconds=round(perf_counter() - started, 3),
                     total=0,
+                    memory_retrieval_mode="error",
+                    memory_match_count=0,
+                    memory_top_score=0.0,
+                    validation_downgraded=0,
                     root_cause="",
                     error=str(exc).replace("\n", " ")[:180],
                 )
@@ -185,30 +215,32 @@ def render_results(rows: list[EvalRow]) -> str:
         "",
         "## Summary",
         "",
-        "| Model | Avg Score | Avg Latency | Valid Runs | Notes |",
-        "| --- | ---: | ---: | ---: | --- |",
+        "| Model | Avg Score | Avg Latency | Valid Runs | Avg Memory Matches | Validator Downgrades | Notes |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for model, model_rows in by_model.items():
         avg_score = avg_scores[model]
         avg_latency = avg_latencies[model]
         valid_runs = sum(1 for row in model_rows if row.valid_schema)
+        avg_memory = mean(row.memory_match_count for row in model_rows)
+        downgrades = sum(row.validation_downgraded for row in model_rows)
         notes = "selected winner" if model == selected_model else "comparison model"
-        lines.append(f"| `{model}` | {avg_score:.2f}/10 | {avg_latency:.2f}s | {valid_runs}/{len(model_rows)} | {notes} |")
+        lines.append(f"| `{model}` | {avg_score:.2f}/10 | {avg_latency:.2f}s | {valid_runs}/{len(model_rows)} | {avg_memory:.1f} | {downgrades} | {notes} |")
 
     lines.extend(
         [
             "",
             "## Incident-Level Results",
             "",
-            "| Model | Incident | Score | Latency | Root Cause / Error |",
-            "| --- | --- | ---: | ---: | --- |",
+            "| Model | Method | Retrieval | Matches | Top Score | Incident | Score | Latency | Root Cause / Error |",
+            "| --- | --- | --- | ---: | ---: | --- | ---: | ---: | --- |",
         ]
     )
     for row in rows:
         cause = row.error or row.root_cause
         cause = cause.replace("|", "/")
         lines.append(
-            f"| `{row.model}` | {row.incident} | {row.total:.2f} | {row.latency_seconds:.2f}s | {cause} |"
+            f"| `{row.model}` | {row.method} | {row.memory_retrieval_mode} | {row.memory_match_count} | {row.memory_top_score:.2f} | {row.incident} | {row.total:.2f} | {row.latency_seconds:.2f}s | {cause} |"
         )
 
     lines.extend(
@@ -237,12 +269,35 @@ def main() -> None:
         default="eval/results.md",
         help="Markdown output path.",
     )
+    parser.add_argument(
+        "--method",
+        default="five_why",
+        choices=("five_why", "fishbone", "fault_tree"),
+        help="RCA method to evaluate.",
+    )
+    parser.add_argument(
+        "--include-memory-cases",
+        action="store_true",
+        help="Append repeated-incident cases that exercise past-RCA memory retrieval.",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
     models = tuple(args.models) if args.models else settings.eval_models
     incidents = load_golden_incidents()
-    rows = [row for model in models for row in evaluate_model(model, settings, incidents)]
+    if args.include_memory_cases:
+        memory_cases_path = REPO_ROOT / "eval" / "repeated_memory_cases.jsonl"
+        if memory_cases_path.exists():
+            incidents.extend(load_golden_incidents(memory_cases_path))
+        else:
+            # Do not fall back to the built-in incidents here: that would
+            # silently duplicate the base set instead of adding memory cases.
+            print(f"Warning: {memory_cases_path} not found; skipping memory cases.")
+    rows = [
+        row
+        for model in models
+        for row in evaluate_model(model, settings, incidents, method=args.method)
+    ]
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

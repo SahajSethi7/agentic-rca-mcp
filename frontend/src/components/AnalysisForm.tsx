@@ -1,5 +1,5 @@
-import { useMemo, useState, type FormEvent } from "react";
-import type { Method } from "../types";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import type { Method, ModelStatus } from "../types";
 import { METHOD_SHORT } from "../types";
 import type { AnalyzePayload } from "../api";
 import { SAMPLE_INCIDENTS } from "../sampleIncidents";
@@ -31,6 +31,8 @@ export default function AnalysisForm({
   writerModel,
   validatorModel,
   validationEnabled,
+  allowedWriterModels = [],
+  modelStatus,
 }: {
   onSubmit: (p: AnalyzePayload) => void;
   busy: boolean;
@@ -39,6 +41,8 @@ export default function AnalysisForm({
   writerModel: string;
   validatorModel: string;
   validationEnabled: boolean;
+  allowedWriterModels?: string[];
+  modelStatus?: ModelStatus | null;
 }) {
   const [problem, setProblem] = useState("");
   const [method, setMethod] = useState<Method>("five_why");
@@ -48,15 +52,30 @@ export default function AnalysisForm({
   const [systemArea, setSystemArea] = useState("");
   const [context, setContext] = useState("");
   const [selectedExample, setSelectedExample] = useState("");
+  const modelOptions = useMemo(
+    () => Array.from(new Set(allowedWriterModels.filter(Boolean))),
+    [allowedWriterModels],
+  );
+  const [generationModel, setGenerationModel] = useState(writerModel);
+  const availability = useMemo(() => {
+    const pairs = modelStatus?.writer.allowed_models ?? [];
+    return new Map(pairs.map((item) => [item.model, item.available]));
+  }, [modelStatus]);
 
   const effectiveCompare = useMemo(
     () => compareMethod === method ? METHODS.find((m) => m.v !== method)!.v : compareMethod,
     [compareMethod, method],
   );
 
+  useEffect(() => {
+    if (!generationModel || !modelOptions.includes(generationModel)) {
+      setGenerationModel(modelOptions.includes(writerModel) ? writerModel : modelOptions[0] || "");
+    }
+  }, [generationModel, modelOptions, writerModel]);
+
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (problem.trim().length < 10) return;
+    if (!canSubmit) return;
     onSubmit({
       problem_statement: problem.trim(),
       method,
@@ -64,6 +83,7 @@ export default function AnalysisForm({
       severity,
       system_area: systemArea.trim() || null,
       context: context.trim() || null,
+      generation_model: generationModel || null,
     });
   }
 
@@ -115,6 +135,7 @@ export default function AnalysisForm({
   const memoryLabel = memoryEnabled
     ? memoryRecordCount != null ? `${memoryRecordCount} records` : "Checking"
     : "Disabled";
+  const canSubmit = problem.trim().length >= 10 && Boolean(generationModel);
 
   return (
     <form onSubmit={submit} className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -192,6 +213,29 @@ export default function AnalysisForm({
             {methodControl(method, setMethod)}
           </div>
 
+          <div>
+            <label className="mb-1.5 block text-body-sm font-semibold text-ink" htmlFor="generation-model">Writer model</label>
+            <select
+              id="generation-model"
+              value={generationModel}
+              onChange={(e) => setGenerationModel(e.target.value)}
+              className="h-10 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-body font-semibold text-ink outline-none transition focus:border-primary focus:bg-white focus:ring-[3px] focus:ring-primary-tint"
+            >
+              {!modelOptions.length && <option value="">No allowlisted models configured</option>}
+              {modelOptions.map((model) => {
+                const available = availability.get(model);
+                return (
+                  <option key={model} value={model} disabled={available === false}>
+                    {model}{available === false ? " (not pulled)" : available === true ? " (ready)" : ""}
+                  </option>
+                );
+              })}
+            </select>
+            <p className="mt-1.5 text-ui leading-5 text-ink-muted">
+              Only allowlisted local writer models can be selected for this run.
+            </p>
+          </div>
+
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div>
               <label className="mb-1.5 block text-body-sm font-semibold text-ink">Severity</label>
@@ -261,7 +305,7 @@ export default function AnalysisForm({
             ["Method", METHOD_SHORT[method]],
             ["Severity", labelForSeverity(severity)],
             ["System area", systemArea.trim() || "Not set"],
-            ["Writer model", writerModel],
+            ["Writer model", generationModel || writerModel],
             ["Validator", validationEnabled ? validatorModel : "Off"],
             ["Memory", memoryLabel],
           ].map(([label, value]) => (
@@ -292,7 +336,7 @@ export default function AnalysisForm({
 
           <button
             type="submit"
-            disabled={busy}
+            disabled={busy || !canSubmit}
             className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-body font-extrabold text-white shadow-[0_14px_28px_-18px_rgba(0,159,219,.75)] transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy && <span className="h-4 w-4 animate-spin rounded-full border-[2.5px] border-white/40 border-t-white" />}

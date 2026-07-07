@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import re
+import sqlite3
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -113,6 +114,9 @@ class MemoryState(TypedDict, total=False):
     matches: list[KnownIssueMatch]
     context_matches: list[KnownIssueMatch]
     evidence_pack: str | None
+    graph_enabled: bool
+    graph_path: Path
+    graph_warning: str | None
 
 
 def _tokens(text: str | None) -> set[str]:
@@ -156,6 +160,205 @@ def _query_text(rca_input: RCAInput) -> str:
         ]
         if part
     )
+
+
+GRAPH_FIELDS: tuple[tuple[str, str, str, float], ...] = (
+    ("system_area", "system_area", "has_system_area", 0.16),
+    ("service_name", "service", "affects_service", 0.16),
+    ("error_signature", "error_signature", "has_signature", 0.18),
+    ("root_cause", "root_cause", "caused_by", 0.10),
+    ("immediate_fix", "fix", "fixed_by", 0.09),
+    ("long_term_fix", "fix", "prevented_by", 0.08),
+    ("evidence_checked", "evidence", "checked_by_evidence", 0.07),
+    ("owner_team", "owner_team", "owned_by", 0.05),
+    ("confidence", "confidence", "has_confidence", 0.03),
+    ("status", "status", "has_status", 0.03),
+)
+
+
+def _normalize_key(value: str) -> str:
+    return " ".join(TOKEN_RE.findall(value.lower()))
+
+
+def _split_tags(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [part.strip() for part in re.split(r"[,;|]", value) if part.strip()]
+
+
+def _field_values(record: dict[str, Any], field: str) -> list[str]:
+    if field == "tags":
+        return _split_tags(record.get("tags"))
+    value = _text(record.get(field))
+    return [value] if value else []
+
+
+def _memory_fingerprint(memory_path: Path) -> dict[str, str]:
+    stat = memory_path.stat()
+    return {
+        "source_path": str(memory_path.resolve()),
+        "source_mtime_ns": str(stat.st_mtime_ns),
+        "source_size": str(stat.st_size),
+    }
+
+
+def _graph_meta(conn: sqlite3.Connection) -> dict[str, str]:
+    try:
+        return {
+            str(key): str(value)
+            for key, value in conn.execute("SELECT key, value FROM meta").fetchall()
+        }
+    except sqlite3.Error:
+        return {}
+
+
+def _init_graph_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS nodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            key TEXT NOT NULL,
+            label TEXT NOT NULL,
+            UNIQUE(kind, key)
+        );
+        CREATE TABLE IF NOT EXISTS edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id INTEGER NOT NULL,
+            target_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            weight REAL NOT NULL,
+            incident_id TEXT NOT NULL,
+            FOREIGN KEY(source_id) REFERENCES nodes(id),
+            FOREIGN KEY(target_id) REFERENCES nodes(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_nodes_kind_key ON nodes(kind, key);
+        CREATE INDEX IF NOT EXISTS idx_edges_incident ON edges(incident_id);
+        """
+    )
+
+
+def _node_id(conn: sqlite3.Connection, *, kind: str, label: str) -> int:
+    key = _normalize_key(label)
+    conn.execute(
+        "INSERT OR IGNORE INTO nodes(kind, key, label) VALUES (?, ?, ?)",
+        (kind, key, label),
+    )
+    row = conn.execute(
+        "SELECT id FROM nodes WHERE kind = ? AND key = ?",
+        (kind, key),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError(f"Failed to create graph node for {kind}:{label}")
+    return int(row[0])
+
+
+def _rebuild_graph_index(conn: sqlite3.Connection, memory_path: Path, records: list[dict[str, Any]]) -> None:
+    conn.executescript("DELETE FROM edges; DELETE FROM nodes; DELETE FROM meta;")
+    for record in records:
+        incident_id = _text(record.get("incident_id"))
+        if not incident_id:
+            continue
+        incident_node = _node_id(conn, kind="incident", label=incident_id)
+        for field, kind, edge_kind, weight in GRAPH_FIELDS:
+            for value in _field_values(record, field):
+                target = _node_id(conn, kind=kind, label=value)
+                conn.execute(
+                    """
+                    INSERT INTO edges(source_id, target_id, kind, weight, incident_id)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (incident_node, target, edge_kind, weight, incident_id),
+                )
+        for tag in _split_tags(record.get("tags")):
+            target = _node_id(conn, kind="tag", label=tag)
+            conn.execute(
+                "INSERT INTO edges(source_id, target_id, kind, weight, incident_id) VALUES (?, ?, ?, ?, ?)",
+                (incident_node, target, "tagged_with", 0.10, incident_id),
+            )
+
+    for key, value in _memory_fingerprint(memory_path).items():
+        conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)", (key, value))
+    conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)", ("record_count", str(len(records))))
+
+
+def ensure_memory_graph_index(
+    memory_path: Path,
+    graph_path: Path,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Create or refresh the derived SQLite graph cache for the Excel memory."""
+    if records is None:
+        records = _load_records(memory_path)
+    graph_path.parent.mkdir(parents=True, exist_ok=True)
+    expected = _memory_fingerprint(memory_path)
+    conn = sqlite3.connect(graph_path)
+    try:
+        _init_graph_schema(conn)
+        if _graph_meta(conn) != {**expected, "record_count": str(len(records))}:
+            _rebuild_graph_index(conn, memory_path, records)
+            rebuilt = True
+        else:
+            rebuilt = False
+        node_count = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
+        edge_count = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+        conn.commit()
+    finally:
+        conn.close()
+    return {
+        "enabled": True,
+        "path": str(graph_path),
+        "exists": graph_path.exists(),
+        "fresh": True,
+        "rebuilt": rebuilt,
+        "node_count": node_count,
+        "edge_count": edge_count,
+        "record_count": len(records),
+        "warning": None,
+    }
+
+
+def get_memory_graph_status(memory_path: Path, graph_path: Path, *, enabled: bool) -> dict[str, Any]:
+    status: dict[str, Any] = {
+        "enabled": enabled,
+        "path": str(graph_path),
+        "exists": graph_path.exists(),
+        "fresh": False,
+        "node_count": None,
+        "edge_count": None,
+        "record_count": None,
+        "warning": None,
+    }
+    if not enabled:
+        return status
+    if not memory_path.exists():
+        status["warning"] = f"RCA memory file not found: {memory_path}"
+        return status
+    if not graph_path.exists():
+        status["warning"] = "Graph index has not been built yet."
+        return status
+    try:
+        expected = _memory_fingerprint(memory_path)
+        conn = sqlite3.connect(graph_path)
+        try:
+            _init_graph_schema(conn)
+            meta = _graph_meta(conn)
+            status["fresh"] = all(meta.get(key) == value for key, value in expected.items())
+            status["record_count"] = int(meta.get("record_count", "0") or 0)
+            status["node_count"] = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
+            status["edge_count"] = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+            conn.commit()
+        finally:
+            conn.close()
+        if not status["fresh"]:
+            status["warning"] = "Graph index is stale and will be rebuilt on the next memory search."
+    except Exception as exc:  # noqa: BLE001 - status should explain rather than crash.
+        status["warning"] = f"{type(exc).__name__}: {exc}"
+    return status
 
 
 def _load_records(path: Path) -> list[dict[str, Any]]:
@@ -248,41 +451,116 @@ def _score_record(query_tokens: set[str], rca_input: RCAInput, record: dict[str,
     return min(score, 1.0), "; ".join(reasons) if reasons else "Weak lexical similarity."
 
 
+def _graph_score_record(query_tokens: set[str], record: dict[str, Any]) -> tuple[float, list[str], list[str]]:
+    if not query_tokens:
+        return 0.0, [], []
+    score = 0.0
+    reasons: list[str] = []
+    paths: list[str] = []
+    incident_id = record.get("incident_id", "unknown")
+
+    for field, kind, edge_kind, weight in (*GRAPH_FIELDS, ("tags", "tag", "tagged_with", 0.10)):
+        for value in _field_values(record, field):
+            value_tokens = _tokens(value)
+            overlap = query_tokens & value_tokens
+            if not overlap:
+                continue
+            signal = min(weight, weight * (0.5 + len(overlap) / max(len(value_tokens), 1)))
+            score += signal
+            label = value if len(value) <= 84 else value[:81].rstrip() + "..."
+            reasons.append(f"{kind} graph signal: {label}")
+            if len(paths) < 3:
+                paths.append(f"current incident -> {kind}:{label} -> {edge_kind} -> {incident_id}")
+
+    return min(score, 0.42), reasons, paths
+
+
+def _match_from_record(
+    *,
+    score: float,
+    reason: str,
+    record: dict[str, Any],
+    retrieval_mode: str,
+    graph_path: list[str],
+) -> KnownIssueMatch:
+    return KnownIssueMatch(
+        incident_id=record.get("incident_id", ""),
+        date=record.get("date") or None,
+        system_area=record.get("system_area") or None,
+        service_name=record.get("service_name") or None,
+        error_signature=record.get("error_signature") or None,
+        problem_statement=record.get("problem_statement", ""),
+        symptoms=record.get("symptoms") or None,
+        root_cause=record.get("root_cause", ""),
+        immediate_fix=record.get("immediate_fix") or None,
+        long_term_fix=record.get("long_term_fix") or None,
+        evidence_checked=record.get("evidence_checked") or None,
+        owner_team=record.get("owner_team") or None,
+        tags=record.get("tags") or None,
+        confidence=_confidence_value(record.get("confidence", "")),
+        status=record.get("status") or None,
+        similarity_score=round(score, 3),
+        match_reason=reason,
+        retrieval_mode=retrieval_mode,  # type: ignore[arg-type]
+        graph_path=graph_path,
+    )
+
+
 def _rank_records(state: MemoryState) -> MemoryState:
     rca_input = state["rca_input"]
     query_tokens = _tokens(_query_text(rca_input))
-    scored: list[tuple[float, str, dict[str, Any]]] = []
+    graph_warning: str | None = None
+    graph_enabled = bool(state.get("graph_enabled"))
+    if graph_enabled:
+        try:
+            ensure_memory_graph_index(
+                state["memory_path"],
+                state["graph_path"],
+                state.get("records", []),
+            )
+        except Exception as exc:  # noqa: BLE001 - graph retrieval must fail soft.
+            graph_warning = f"RCA memory graph unavailable; used lexical retrieval ({type(exc).__name__})."
+            graph_enabled = False
+
+    scored: list[tuple[float, str, str, list[str], dict[str, Any]]] = []
     for record in state.get("records", []):
-        score, reason = _score_record(query_tokens, rca_input, record)
+        lexical_score, lexical_reason = _score_record(query_tokens, rca_input, record)
+        graph_score, graph_reasons, graph_path = (
+            _graph_score_record(query_tokens, record) if graph_enabled else (0.0, [], [])
+        )
+        score = min(1.0, lexical_score + graph_score)
+        if graph_score and lexical_score:
+            retrieval_mode = "hybrid"
+        elif graph_score:
+            retrieval_mode = "graph"
+        else:
+            retrieval_mode = "lexical"
+        reasons = [lexical_reason] if lexical_score else []
+        reasons.extend(graph_reasons[:3])
+        reason = "; ".join(reasons) if reasons else "Weak lexical similarity."
         if score >= state["min_score"]:
-            scored.append((score, reason, record))
+            scored.append((score, reason, retrieval_mode, graph_path, record))
     scored.sort(key=lambda item: item[0], reverse=True)
 
     matches: list[KnownIssueMatch] = []
-    for score, reason, record in scored:
+    for score, reason, retrieval_mode, graph_path, record in scored:
         matches.append(
-            KnownIssueMatch(
-                incident_id=record.get("incident_id", ""),
-                date=record.get("date") or None,
-                system_area=record.get("system_area") or None,
-                service_name=record.get("service_name") or None,
-                error_signature=record.get("error_signature") or None,
-                problem_statement=record.get("problem_statement", ""),
-                symptoms=record.get("symptoms") or None,
-                root_cause=record.get("root_cause", ""),
-                immediate_fix=record.get("immediate_fix") or None,
-                long_term_fix=record.get("long_term_fix") or None,
-                evidence_checked=record.get("evidence_checked") or None,
-                owner_team=record.get("owner_team") or None,
-                tags=record.get("tags") or None,
-                confidence=_confidence_value(record.get("confidence", "")),
-                status=record.get("status") or None,
-                similarity_score=round(score, 3),
-                match_reason=reason,
+            _match_from_record(
+                score=score,
+                reason=reason,
+                record=record,
+                retrieval_mode=retrieval_mode,
+                graph_path=graph_path,
             )
         )
     context_limit = max(0, state["max_matches"])
-    return {**state, "matches": matches, "context_matches": matches[:context_limit]}
+    return {
+        **state,
+        "matches": matches,
+        "context_matches": matches[:context_limit],
+        "graph_warning": graph_warning,
+        "graph_enabled": graph_enabled,
+    }
 
 
 def _build_evidence_pack(state: MemoryState) -> MemoryState:
@@ -291,7 +569,7 @@ def _build_evidence_pack(state: MemoryState) -> MemoryState:
         return {**state, "evidence_pack": None}
 
     lines = [
-        "PAST RCA MEMORY MATCHES (read-only local Excel retrieval)",
+        "PAST RCA MEMORY MATCHES (read-only local Excel and graph retrieval)",
         "Use these records as supporting evidence only when the current symptoms are similar.",
         "Do not copy a past fix blindly; reason from the current incident.",
         "",
@@ -300,9 +578,11 @@ def _build_evidence_pack(state: MemoryState) -> MemoryState:
         lines.extend(
             [
                 f"Match {index}: {match.incident_id} (score {match.similarity_score:.2f})",
+                f"- retrieval: {match.retrieval_mode}",
                 f"- service/signature: {match.service_name or 'unknown'} / {match.error_signature or 'not recorded'}",
                 f"- past root cause: {match.root_cause}",
                 f"- past fix signal: {match.immediate_fix or 'not recorded'}",
+                f"- graph path: {' | '.join(match.graph_path) if match.graph_path else 'not recorded'}",
                 "",
             ]
         )
@@ -315,6 +595,8 @@ def _direct_memory_search(
     *,
     max_matches: int,
     min_score: float,
+    graph_enabled: bool,
+    graph_path: Path,
 ) -> MemorySearch:
     records = _load_records(memory_path)
     state: MemoryState = {
@@ -323,14 +605,17 @@ def _direct_memory_search(
         "max_matches": max_matches,
         "min_score": min_score,
         "records": records,
+        "graph_enabled": graph_enabled,
+        "graph_path": graph_path,
     }
     state = _rank_records(state)
     state = _build_evidence_pack(state)
     return MemorySearch(
         matches=state.get("matches", []),
         evidence_pack=state.get("evidence_pack"),
-        retrieval_mode="deterministic",
+        retrieval_mode="graph" if state.get("graph_enabled") else "deterministic",
         context_match_count=len(state.get("context_matches", [])),
+        warning=state.get("graph_warning"),
     )
 
 
@@ -340,6 +625,8 @@ def _langgraph_memory_search(
     *,
     max_matches: int,
     min_score: float,
+    graph_enabled: bool,
+    graph_path: Path,
 ) -> MemorySearch:
     from langchain_core.documents import Document
     from langgraph.graph import END, START, StateGraph
@@ -382,13 +669,16 @@ def _langgraph_memory_search(
             "memory_path": memory_path,
             "max_matches": max_matches,
             "min_score": min_score,
+            "graph_enabled": graph_enabled,
+            "graph_path": graph_path,
         }
     )
     return MemorySearch(
         matches=state.get("matches", []),
         evidence_pack=state.get("evidence_pack"),
-        retrieval_mode="langgraph",
+        retrieval_mode="langgraph-graph" if state.get("graph_enabled") else "langgraph",
         context_match_count=len(state.get("context_matches", [])),
+        warning=state.get("graph_warning"),
     )
 
 
@@ -398,8 +688,11 @@ def search_past_rca_memory(
     *,
     max_matches: int = 10,
     min_score: float = 0.50,
+    graph_enabled: bool = True,
+    graph_path: Path | None = None,
 ) -> MemorySearch:
     """Return all threshold-passing RCA records and a compact prompt evidence pack."""
+    graph_path = graph_path or memory_path.with_suffix(".graph.sqlite")
     if not memory_path.exists():
         return MemorySearch(
             matches=[],
@@ -415,6 +708,8 @@ def search_past_rca_memory(
             memory_path,
             max_matches=max_matches,
             min_score=min_score,
+            graph_enabled=graph_enabled,
+            graph_path=graph_path,
         )
     except ModuleNotFoundError as exc:
         try:
@@ -423,13 +718,16 @@ def search_past_rca_memory(
                 memory_path,
                 max_matches=max_matches,
                 min_score=min_score,
+                graph_enabled=graph_enabled,
+                graph_path=graph_path,
             )
             return MemorySearch(
                 matches=result.matches,
                 evidence_pack=result.evidence_pack,
-                retrieval_mode="deterministic",
+                retrieval_mode=result.retrieval_mode,
                 context_match_count=result.context_match_count,
-                warning=f"LangGraph memory path unavailable; used deterministic fallback ({type(exc).__name__}).",
+                warning=result.warning
+                or f"LangGraph memory path unavailable; used direct fallback ({type(exc).__name__}).",
             )
         except Exception as fallback_exc:
             return MemorySearch(
@@ -446,13 +744,16 @@ def search_past_rca_memory(
                 memory_path,
                 max_matches=max_matches,
                 min_score=min_score,
+                graph_enabled=graph_enabled,
+                graph_path=graph_path,
             )
             return MemorySearch(
                 matches=result.matches,
                 evidence_pack=result.evidence_pack,
-                retrieval_mode="deterministic",
+                retrieval_mode=result.retrieval_mode,
                 context_match_count=result.context_match_count,
-                warning=f"LangGraph memory path unavailable; used deterministic fallback ({type(exc).__name__}).",
+                warning=result.warning
+                or f"LangGraph memory path unavailable; used direct fallback ({type(exc).__name__}).",
             )
         except Exception as fallback_exc:
             return MemorySearch(
@@ -655,6 +956,8 @@ def build_memory_matches_workbook(
         "Tags",
         "Confidence",
         "Status",
+        "Retrieval Mode",
+        "Graph Path",
         "Match Reason",
     ]
     matches_sheet.append(headers)
@@ -683,6 +986,8 @@ def build_memory_matches_workbook(
                     match.tags or "",
                     match.confidence or "",
                     match.status or "",
+                    match.retrieval_mode,
+                    " | ".join(match.graph_path),
                     match.match_reason,
                 ]
             )
@@ -705,11 +1010,13 @@ def build_memory_matches_workbook(
                 "",
                 "",
                 "",
+                "",
+                "",
                 f"Threshold: {round(min_score * 100)}%",
             ]
         )
 
-    widths = [11, 18, 13, 18, 20, 24, 42, 38, 44, 36, 36, 36, 18, 24, 13, 14, 52]
+    widths = [11, 18, 13, 18, 20, 24, 42, 38, 44, 36, 36, 36, 18, 24, 13, 14, 16, 42, 52]
     for idx, width in enumerate(widths, start=1):
         matches_sheet.column_dimensions[get_column_letter(idx)].width = width
     matches_sheet.freeze_panes = "A2"

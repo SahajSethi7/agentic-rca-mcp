@@ -9,21 +9,22 @@ the system predictable, auditable, and safe to operate locally.
 
 The user provides an incident description and optional supporting context. The
 system sanitizes the input, retrieves similar past incidents from a local Excel
-memory when enabled, asks a configured model to generate a structured RCA, runs
-deterministic quality checks, optionally validates the report with a reviewer
-model, and writes local artifacts.
+memory and derived SQLite graph cache when enabled, asks a configured model to
+generate a structured RCA, runs deterministic quality checks, optionally
+validates the report with a reviewer model, and writes local artifacts plus
+durable web job history.
 
 ```text
 Web UI / FastAPI / CLI / MCP
   -> RCAAgent
   -> sanitizer
-  -> past RCA memory retrieval
+  -> past RCA memory and graph retrieval
   -> RCA method strategy
   -> provider abstraction
   -> Pydantic RCAReport
   -> critique and bounded revision
   -> optional validation model
-  -> PDF, HTML, internal JSON, matching-RCA workbook, audit log
+  -> PDF, HTML, internal JSON, matching-RCA workbook, audit log, job history
 ```
 
 Every interface uses the same `RCAAgent.run()` path, so sanitization,
@@ -43,6 +44,10 @@ It provides:
 - PDF and standalone HTML report links
 - matching past-RCA Excel export when memory matches are available
 - two-method comparison
+- writer-model selection from `RCA_ALLOWED_MODELS`
+- persisted job and audit history after backend restarts
+- operator health checks for models, memory graph freshness, history, disk, and
+  system memory
 
 The web UI does not expose a downloadable RCA JSON file. The backend still
 persists an internal JSON artifact for local output and traceability.
@@ -54,6 +59,10 @@ POST /ui/analyze
 GET  /ui/events/{job_id}
 GET  /ui/status/{job_id}
 GET  /ui/meta
+GET  /ui/model-status
+GET  /ui/jobs
+GET  /ui/jobs/{job_id}
+GET  /ui/audit
 GET  /ui/jobs/{job_id}/runs/{index}/report.pdf
 GET  /ui/jobs/{job_id}/runs/{index}/report.html
 GET  /ui/jobs/{job_id}/runs/{index}/matching-past-rcas.xlsx
@@ -61,7 +70,9 @@ GET  /ui/jobs/{job_id}/runs/{index}/matching-past-rcas.xlsx
 
 `web/jobs.py` runs analyses in background threads, stores replayable job events,
 streams progress to the browser, and writes per-job artifacts under
-`OUTPUT_DIR/ui/<job_id>/`.
+`OUTPUT_DIR/ui/<job_id>/`. `web/history.py` mirrors jobs, runs, stage events,
+artifact paths, selected models, structured errors, and audit records into a
+local SQLite database at `RCA_JOB_HISTORY_PATH`.
 
 ### FastAPI
 
@@ -97,7 +108,8 @@ core RCA inputs and returns a summary plus local artifact paths.
 
 1. Validate input.
 2. Sanitize text and redact secrets.
-3. Retrieve similar past RCA records when memory is enabled.
+3. Retrieve similar past RCA records when memory is enabled, using graph-boosted
+   hybrid ranking when the derived SQLite graph cache is healthy.
 4. Build method-specific prompts.
 5. Generate a schema-validated report through the active provider.
 6. Attach memory matches to `known_issue_matches`.
@@ -205,6 +217,7 @@ Primary model variables:
 LLM_PROVIDER
 OLLAMA_BASE_URL
 RCA_MODEL
+RCA_ALLOWED_MODELS
 HOSTED_OPEN_BASE_URL
 HOSTED_OPEN_API_KEY
 HOSTED_OPEN_MODEL
@@ -214,7 +227,14 @@ VALIDATION_MODEL
 Recommended local models:
 
 - `qwen3:8b` for RCA generation
+- `qwen3.5:4b` as an allowlisted smaller writer-model option when pulled
 - `llama3.2:latest` for validation and evaluation
+
+For the web UI, `RCA_MODEL` is the default selected writer model and
+`RCA_ALLOWED_MODELS` is the strict allowlist of selectable local writer models.
+`POST /ui/analyze` accepts an optional `generation_model`; the backend rejects
+values outside the allowlist and creates per-run settings without mutating
+`.env`, global settings, or Docker configuration.
 
 The default generation budget is `RCA_MAX_OUTPUT_TOKENS=4096`. Qwen3 prompts
 receive the `/no_think` soft switch so the Ollama OpenAI-compatible endpoint
@@ -232,20 +252,33 @@ The expected sheet is `Past RCA Memory`. Records include incident IDs, system
 area, service, symptoms, root cause, fixes, evidence checked, tags, confidence,
 and status.
 
-Memory retrieval is local and bounded:
+Memory retrieval is local and bounded. The Excel workbook remains the source of
+truth; `OUTPUT_DIR/cache/rca_memory_graph.sqlite` is a derived cache that can be
+rebuilt when the workbook changes.
 
 ```text
 RCAInput
   -> load workbook
-  -> score similar incidents
+  -> ensure graph cache freshness
+  -> score similar incidents lexically
+  -> add graph proximity and relationship signals
+  -> rerank within configured match limits
   -> build compact evidence pack
   -> add evidence to prompt context
   -> attach matches to RCAReport.known_issue_matches
 ```
 
+The graph cache models incidents, system areas, services, error signatures,
+root causes, fixes, evidence, owner teams, tags, status, and confidence. Edges
+capture relationships such as affected service, signature, cause, fix, evidence,
+owner, and tag. `KnownIssueMatch` includes the retrieval mode (`lexical`,
+`graph`, or `hybrid`) plus compact `graph_path` evidence for reviewers and the
+prompt.
+
 If `langchain-core` and `langgraph` are installed, the same retrieval steps can
 run inside a small LangGraph workflow. Otherwise, the deterministic local scorer
-is used directly.
+is used directly. If graph indexing or LangGraph retrieval fails, the pipeline
+falls back to lexical retrieval and records a warning.
 
 Memory is treated as evidence, not truth. The report surfaces match scores,
 match reasons, known root causes, fixes, and evidence checked so reviewers can
@@ -295,6 +328,9 @@ Provider recovery is deliberately conservative:
 | Restricted writes | `utils.enforce_output_path()` keeps artifacts inside `OUTPUT_DIR`. |
 | Structured errors | `utils.classify_exception()` maps failures to safe error envelopes. |
 | Audit trail | `utils.append_audit_record()` writes JSONL records with hashed problem text and run metadata. |
+| Durable web history | `web/history.py` stores jobs, runs, events, artifacts, selected models, and mirrored audit records in SQLite. |
+| Bounded retention | Job history pruning also removes now-unreachable per-job artifacts from `OUTPUT_DIR/ui/<job_id>`. |
+| Model allowlist | `/ui/analyze` rejects writer models not present in `RCA_ALLOWED_MODELS`. |
 
 ## Artifacts
 
@@ -304,6 +340,7 @@ The engine writes local artifacts under `OUTPUT_DIR`:
 - standalone HTML report
 - internal JSON report artifact
 - audit log
+- durable web job/audit history SQLite database
 - matching past-RCA workbook for web jobs when memory matches exist
 
 `pdf_generator.py` uses ReportLab. `html_generator.py` creates a standalone
@@ -335,14 +372,37 @@ enforces route-level RCA permissions for the API and web job routes.
 The eval harness lives in `eval/`:
 
 - `golden_set.jsonl`
+- `repeated_memory_cases.jsonl`
 - `run_eval.py`
 - `judge.py`
 - `rubric.md`
+
+`run_eval.py` records model, prompt version, method, schema validity, latency,
+memory retrieval mode, memory match count, top memory score, validator
+downgrades, and report-quality scores. `--include-memory-cases` appends
+sanitized repeated-incident cases that exercise graph-backed memory retrieval
+against wording changes.
 
 The test suite covers schemas, sanitization, guardrails, orchestrator behavior,
 providers, critique tools, entry points, HTML generation, and web UI routes.
 
 CI runs linting, tests, and Docker image build checks.
+
+## Observability
+
+`model_status.py` powers `/ui/model-status`, which combines:
+
+- writer and validator model catalog reachability
+- allowlisted writer-model availability
+- memory workbook health
+- graph cache existence, freshness, node count, and edge count
+- durable job-history metrics
+- output disk usage
+- system memory
+
+This endpoint is intentionally diagnostic: it can report an endpoint as
+reachable while still marking overall readiness false when the selected model is
+not pulled.
 
 ## System Boundaries
 
@@ -350,13 +410,16 @@ The system currently:
 
 - generates structured RCA reports
 - supports three RCA methods
-- retrieves similar records from a local Excel memory
+- retrieves similar records from a local Excel memory with graph-boosted hybrid
+  ranking
 - optionally writes generated RCAs back to the memory workbook
+- lets the web UI select a per-run allowlisted local writer model
 - uses local or hosted OpenAI-compatible models
 - validates output with Pydantic
 - runs deterministic critique and bounded revision
 - provides web UI, API, CLI, and MCP access
 - writes local PDF, HTML, internal JSON, and audit artifacts
+- stores durable web job/audit history in local SQLite
 - optionally protects web/API routes with Auth0 OAuth and RBAC permissions
 
 The system does not:
@@ -364,5 +427,4 @@ The system does not:
 - inspect entire source repositories
 - build repository knowledge graphs at runtime
 - provide database-backed multi-tenant account management
-- maintain database-backed job history
 - execute remediation actions

@@ -153,6 +153,8 @@ class RCAAgent:
                 self.settings.memory_path,
                 max_matches=self.settings.memory_max_matches,
                 min_score=self.settings.memory_min_score,
+                graph_enabled=self.settings.memory_graph_enabled,
+                graph_path=self.settings.memory_graph_path,
             )
             memory_matches = memory_search.matches
             if memory_search.evidence_pack:

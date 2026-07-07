@@ -202,6 +202,7 @@ function MemoryMatchCard({ match, featured = false }: { match: KnownIssueMatch; 
         <span className="rounded-md bg-primary-selected px-2 py-1 font-mono text-caption font-extrabold text-white">{match.incident_id}</span>
         {match.service_name && <span className="rounded-md bg-white px-2 py-1 text-caption font-bold text-ink-muted ring-1 ring-primary-soft">{match.service_name}</span>}
         {match.confidence && <span className="rounded-md bg-white px-2 py-1 text-caption font-bold capitalize text-primary-selected ring-1 ring-primary-soft">{match.confidence}</span>}
+        {match.retrieval_mode && <span className="rounded-md bg-white px-2 py-1 text-caption font-bold capitalize text-primary-selected ring-1 ring-primary-soft">{match.retrieval_mode}</span>}
       </div>
       <div className="mt-3">
         <SimilarityBar score={match.similarity_score} />
@@ -209,6 +210,16 @@ function MemoryMatchCard({ match, featured = false }: { match: KnownIssueMatch; 
       <p className="mt-3 text-ui font-extrabold uppercase tracking-[0.1em] text-primary-selected">Known root cause</p>
       <p className="mt-1 break-words text-body font-semibold leading-5 text-ink">{match.root_cause}</p>
       <p className={`mt-2 break-words text-ui leading-5 ${featured ? "text-ink" : "text-ink-muted"}`}>{match.match_reason}</p>
+      {match.graph_path?.length ? (
+        <div className="mt-3 rounded-md border border-primary-soft bg-white/80 px-3 py-2">
+          <p className="text-caption font-extrabold uppercase tracking-[0.12em] text-primary-selected">Graph evidence</p>
+          <div className="mt-1 space-y-1">
+            {match.graph_path.slice(0, 3).map((path) => (
+              <p key={path} className="break-words font-mono text-caption leading-5 text-ink-muted">{path}</p>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {tags.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {tags.map((tag) => (

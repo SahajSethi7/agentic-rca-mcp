@@ -33,6 +33,8 @@ export interface KnownIssueMatch {
   status?: string | null;
   similarity_score: number;
   match_reason: string;
+  retrieval_mode?: "lexical" | "graph" | "hybrid";
+  graph_path?: string[];
 }
 
 export interface RCAReport {
@@ -76,12 +78,41 @@ export interface RunState {
   report?: RCAReport;
   urls?: RunUrls;
   error?: RunError | null;
+  done?: boolean;
   created_at?: number;
   updated_at?: number;
   completed_at?: number;
 }
 
 export interface AnalyzeResponse { job_id: string; runs: { index: number; method: Method }[]; started_at?: string; }
+
+export interface JobHistoryRecord {
+  job_id: string;
+  payload: Record<string, unknown>;
+  done: boolean;
+  created_at: number;
+  updated_at: number;
+  runs: RunState[];
+  events: SSEvent[];
+}
+
+export interface JobHistoryResponse { jobs: JobHistoryRecord[]; }
+
+export interface AuditRecord {
+  ts?: string;
+  entry_point?: string;
+  problem_sha256?: string;
+  method?: string;
+  success?: boolean;
+  generation_model?: string | null;
+  validation_model?: string | null;
+  action?: string | null;
+  artifact_kind?: string | null;
+  error_type?: string | null;
+  created_at_ms?: number;
+}
+
+export interface AuditHistoryResponse { records: AuditRecord[]; }
 
 export interface MemoryMeta {
   enabled: boolean;
@@ -98,6 +129,7 @@ export interface UiMeta {
   models?: {
     writer: string;
     validator: string;
+    allowed_writer_models?: string[];
   };
   provider?: string;
   validation?: {
@@ -124,6 +156,7 @@ export interface ModelProbe {
   available?: boolean | null;
   catalog_count?: number | null;
   error?: string | null;
+  allowed_models?: { model: string; available: boolean | null; selected: boolean }[];
 }
 
 export interface ModelStatus {
@@ -141,10 +174,35 @@ export interface ModelStatus {
     exists?: boolean;
     available: boolean;
     healthy?: boolean;
+    graph?: {
+      enabled: boolean;
+      path: string;
+      exists: boolean;
+      fresh: boolean;
+      node_count?: number | null;
+      edge_count?: number | null;
+      record_count?: number | null;
+      warning?: string | null;
+    };
   };
   system_memory: {
     available_mb: number | null;
     total_mb: number | null;
+    warning?: string | null;
+  };
+  output_storage?: {
+    path: string;
+    total_mb: number | null;
+    used_mb: number | null;
+    free_mb: number | null;
+    warning?: string | null;
+  };
+  job_history?: {
+    path: string;
+    total_runs: number | null;
+    completed_runs: number | null;
+    failed_runs: number | null;
+    average_latency_seconds: number | null;
     warning?: string | null;
   };
 }

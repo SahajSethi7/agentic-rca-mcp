@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, ModelStatus, SSEvent, UiMeta } from "./types";
+import type { AnalyzeResponse, AuditHistoryResponse, JobHistoryResponse, ModelStatus, SSEvent, UiMeta } from "./types";
 
 export type AccessTokenGetter = () => Promise<string | null>;
 
@@ -26,6 +26,7 @@ export interface AnalyzePayload {
   compare_method?: string | null;
   severity?: string | null;
   system_area?: string | null;
+  generation_model?: string | null;
 }
 
 export async function startAnalyze(payload: AnalyzePayload): Promise<AnalyzeResponse> {
@@ -47,6 +48,18 @@ export async function fetchMeta(): Promise<UiMeta> {
 export async function fetchModelStatus(): Promise<ModelStatus> {
   const res = await authFetch("/ui/model-status");
   if (!res.ok) throw new Error(`model status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchJobHistory(): Promise<JobHistoryResponse> {
+  const res = await authFetch("/ui/jobs");
+  if (!res.ok) throw new Error(`job history failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAuditHistory(): Promise<AuditHistoryResponse> {
+  const res = await authFetch("/ui/audit");
+  if (!res.ok) throw new Error(`audit history failed: ${res.status}`);
   return res.json();
 }
 
@@ -92,6 +105,10 @@ export function subscribe(
   let ended = false;
   let es: EventSource | null = null;
   let pollTimer: number | undefined;
+  // Count of events already delivered via SSE, so a mid-stream fallback to
+  // polling resumes from the right cursor instead of replaying (and
+  // double-appending) every event from the start.
+  let delivered = 0;
 
   const poll = (cursor: number) => {
     if (closed) return;
@@ -115,13 +132,16 @@ export function subscribe(
 
   try {
     es = new EventSource(`/ui/events/${jobId}`);
-    es.onmessage = (ev) => { try { onEvent(JSON.parse(ev.data)); } catch { /* ignore */ } };
+    es.onmessage = (ev) => {
+      delivered += 1; // count the event even if parsing fails; the server delivered it
+      try { onEvent(JSON.parse(ev.data)); } catch { /* ignore */ }
+    };
     es.addEventListener("end", () => { ended = true; es?.close(); onDone(); });
     es.onerror = () => {
       if (ended || closed) return;
       es?.close();
       es = null;
-      poll(0);
+      poll(delivered);
     };
   } catch {
     poll(0);

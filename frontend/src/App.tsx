@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
-import type { ActivityItem, MemoryMeta, Method, ModelStatus, RCAReport, RunState, RunUrls, SSEvent, UiMeta } from "./types";
+import type { ActivityItem, AuditRecord, MemoryMeta, Method, ModelStatus, RCAReport, RunState, RunUrls, SSEvent, UiMeta } from "./types";
 import { METHOD_SHORT } from "./types";
-import { downloadArtifact, fetchMeta, fetchModelStatus, openArtifact, setAccessTokenGetter, startAnalyze, subscribe, type AnalyzePayload } from "./api";
+import { downloadArtifact, fetchAuditHistory, fetchJobHistory, fetchMeta, fetchModelStatus, openArtifact, setAccessTokenGetter, startAnalyze, subscribe, type AnalyzePayload } from "./api";
 import { AUTH_PERMISSIONS, useAppAuth, type AppAuthContext } from "./auth";
 import TopBar from "./components/TopBar";
 import AnalysisForm from "./components/AnalysisForm";
@@ -119,6 +119,30 @@ function mergeRuns(primary: RunState[], secondary: RunState[] = []) {
       return true;
     })
     .slice(0, RECENT_RUN_LIMIT);
+}
+
+function normalizePersistedRun(run: RunState): RunState {
+  if (run.done || run.report || run.error || run.stage === "done" || run.stage === "error") {
+    return run;
+  }
+  const updatedAt = run.updated_at ?? Date.now();
+  return {
+    ...run,
+    stage: "error",
+    error: {
+      error_type: "job_interrupted",
+      message: "Run interrupted before completion.",
+      detail: "The backend stopped before this persisted run reached a terminal state.",
+    },
+    updated_at: updatedAt,
+    completed_at: run.completed_at ?? updatedAt,
+    activity: run.activity ?? [{
+      stage: "error",
+      title: "Run interrupted",
+      detail: "The backend stopped before this persisted run reached a terminal state.",
+      at: updatedAt,
+    }],
+  };
 }
 
 function formatTimestamp(value?: number | null) {
@@ -350,7 +374,9 @@ function SurfaceHeader({ eyebrow, title, body }: { eyebrow: string; title: strin
 
 function RunStatusChip({ run }: { run: RunState }) {
   const running = !run.report && !run.error;
-  const label = run.error ? "Failed" : run.report ? "Ready" : run.stage === "queued" ? "Queued" : "Running";
+  const label = run.error?.error_type === "job_interrupted"
+    ? "Interrupted"
+    : run.error ? "Failed" : run.report ? "Ready" : run.stage === "queued" ? "Queued" : "Running";
   const cls = run.error
     ? "bg-danger-50 text-danger-700 ring-1 ring-danger-200"
     : run.report
@@ -535,17 +561,49 @@ function ExportsView({ runs }: { runs: RunState[] | null }) {
 }
 
 function AuditLogsView({ runs }: { runs: RunState[] | null }) {
+  const [records, setRecords] = useState<AuditRecord[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const activity = runs?.flatMap((run) => run.activity ?? []) ?? [];
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAuditHistory()
+      .then((data) => {
+        if (!cancelled) setRecords(data.records ?? []);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
       <div>
         <ActivityTrace activity={activity} />
       </div>
       <aside className="rounded-lg border border-slate-200 bg-white p-5 shadow-card">
-        <h2 className="text-lead font-extrabold text-ink">Local audit log</h2>
+        <h2 className="text-lead font-extrabold text-ink">Local audit history</h2>
         <p className="mt-2 text-body-sm leading-6 text-ink-muted">
-          The backend appends a local JSONL audit record for each web run. This UI shows live stage activity for the current session.
+          The backend writes JSONL audit records and mirrors them to SQLite for browsing.
         </p>
+        {error ? (
+          <p className="mt-3 rounded-md border border-warn-200 bg-warn-50 px-3 py-2 text-ui font-semibold text-warn-700">{error}</p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {records.slice(0, 8).map((record, index) => (
+              <div key={`${record.created_at_ms ?? index}`} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-ui font-extrabold text-ink">{record.action || "rca.run"} - {record.success === false ? "failed" : "ok"}</p>
+                <p className="mt-1 break-words text-caption font-semibold text-ink-muted">
+                  {record.ts || "time unknown"} / {record.method || "method unknown"} / {record.generation_model || "model n/a"}
+                </p>
+              </div>
+            ))}
+            {!records.length && <p className="text-ui font-semibold text-ink-muted">No persisted audit records yet.</p>}
+          </div>
+        )}
       </aside>
     </div>
   );
@@ -600,9 +658,14 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
   }, []);
 
   const memoryReady = modelStatus?.memory?.healthy ?? modelStatus?.memory?.available ?? null;
+  const graph = modelStatus?.memory?.graph;
   const systemMemory = modelStatus?.system_memory.available_mb != null
     ? `${modelStatus.system_memory.available_mb.toLocaleString()} MB available`
     : (modelStatus?.system_memory.warning || "Unknown");
+  const outputStorage = modelStatus?.output_storage?.free_mb != null
+    ? `${modelStatus.output_storage.free_mb.toLocaleString()} MB free`
+    : (modelStatus?.output_storage?.warning || "Unknown");
+  const history = modelStatus?.job_history;
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
@@ -639,6 +702,9 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
               ["Writer", `${modelStatus?.writer.configured_model || uiMeta?.models?.writer || "checking"} - ${modelStatusText(modelStatus?.writer)}`],
               ["Validator", modelStatus?.validator.enabled === false ? "Off" : `${modelStatus?.validator.configured_model || uiMeta?.validation?.model || "checking"} - ${modelStatusText(modelStatus?.validator)}`],
               ["RCA memory", modelStatus?.memory.enabled === false ? "Disabled" : `${modelStatus?.memory.record_count ?? "checking"} records - ${memoryReady ? "available" : "needs attention"}`],
+              ["Memory graph", graph?.enabled === false ? "Disabled" : `${graph?.node_count ?? "not built"} nodes - ${graph?.fresh ? "fresh" : "stale/not built"}`],
+              ["Job history", history?.total_runs != null ? `${history.total_runs} runs (${history.failed_runs ?? 0} failed)` : "Checking"],
+              ["Output storage", outputStorage],
               ["System memory", systemMemory],
             ].map(([label, value]) => (
               <div key={label} className="grid grid-cols-[128px_minmax(0,1fr)] gap-3 text-body-sm">
@@ -649,6 +715,18 @@ function SettingsView({ uiMeta }: { uiMeta: UiMeta | null }) {
             {modelStatus?.overall.warnings?.length ? (
               <div className="rounded-md border border-warn-200 bg-warn-50 px-3 py-2 text-ui font-semibold text-warn-700">
                 {modelStatus.overall.warnings.slice(0, 3).join(" ")}
+              </div>
+            ) : null}
+            {modelStatus?.writer.allowed_models?.length ? (
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-ui font-extrabold uppercase tracking-[0.12em] text-ink-muted">Allowed writer models</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {modelStatus.writer.allowed_models.map((item) => (
+                    <span key={item.model} className={`rounded-md px-2 py-1 text-caption font-extrabold ${item.available === false ? "bg-danger-50 text-danger-700" : "bg-primary-tint text-primary-selected"}`}>
+                      {item.model}{item.selected ? " default" : ""}{item.available === false ? " missing" : ""}
+                    </span>
+                  ))}
+                </div>
               </div>
             ) : null}
           </div>
@@ -868,6 +946,7 @@ export default function App() {
   const [runHistory, setRunHistory] = useState<RunState[]>(loadStoredRunHistory);
   const [busy, setBusy] = useState(false);
   const [uiMeta, setUiMeta] = useState<UiMeta | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<ModelStatus | null>(null);
   const [activeSurface, setActiveSurface] = useState<Surface>(initialRoute.surface);
   const [selectedRunKey, setSelectedRunKey] = useState<string | null>(initialRoute.runKey ?? null);
   const [lastPayload, setLastPayload] = useState<AnalyzePayload | null>(null);
@@ -950,6 +1029,26 @@ export default function App() {
             },
           });
         }
+      });
+
+    fetchModelStatus()
+      .then((status) => {
+        if (!cancelled) setRuntimeStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setRuntimeStatus(null);
+      });
+
+    fetchJobHistory()
+      .then((history) => {
+        if (cancelled) return;
+        const restored = (history.jobs ?? [])
+          .flatMap((job) => job.runs ?? [])
+          .map(normalizePersistedRun);
+        if (restored.length) setRunHistory((prev) => mergeRuns(restored, prev));
+      })
+      .catch(() => {
+        // Durable history is an enhancement; local live runs still work.
       });
 
     const demo = window.__RCA_DEMO__;
@@ -1168,6 +1267,8 @@ export default function App() {
           writerModel={writerModel}
           validatorModel={validatorModel}
           validationEnabled={validationEnabled}
+          allowedWriterModels={uiMeta?.models?.allowed_writer_models ?? []}
+          modelStatus={runtimeStatus}
         />
       );
     }
@@ -1226,7 +1327,7 @@ export default function App() {
     if (activeSurface === "exports") return <ExportsView runs={allRuns} />;
     if (activeSurface === "audit") return <AuditLogsView runs={runs} />;
     return <SettingsView uiMeta={uiMeta} />;
-  }, [activeSurface, allRuns, auth, busy, lastPayload, memoryMeta, runs, selectedReportRun, startedAt, uiMeta, validationEnabled, validatorModel, writerModel]);
+  }, [activeSurface, allRuns, auth, busy, lastPayload, memoryMeta, runtimeStatus, runs, selectedReportRun, startedAt, uiMeta, validationEnabled, validatorModel, writerModel]);
 
   useEffect(() => {
     document.title = `${DOCUMENT_TITLES[activeSurface]} \u2014 RCA Assistant`;

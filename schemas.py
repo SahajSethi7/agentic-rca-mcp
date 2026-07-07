@@ -32,6 +32,14 @@ class KnownIssueMatch(BaseModel):
     status: str | None = Field(default=None)
     similarity_score: float = Field(ge=0, le=1, description="Local retrieval similarity score.")
     match_reason: str = Field(description="Short explanation of why this memory matched.")
+    retrieval_mode: Literal["lexical", "graph", "hybrid"] = Field(
+        default="lexical",
+        description="How the past RCA match was retrieved.",
+    )
+    graph_path: list[str] = Field(
+        default_factory=list,
+        description="Compact graph evidence path connecting the query to this memory row.",
+    )
 
 
 class RCAInput(BaseModel):

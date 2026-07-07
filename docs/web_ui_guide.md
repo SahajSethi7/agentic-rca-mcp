@@ -10,14 +10,16 @@ from the CLI and the MCP tool, but the browser is the friendliest way in.
 ## 1. What the web UI is
 
 The web UI is a single page served by the FastAPI app (`api.py`). You type a
-problem statement, pick a method, and press **Run analysis**. The agent then
-plans, generates, critiques and revises a root-cause analysis using your
-open-source model, and the finished report is rendered right on the page with a
+problem statement, choose an allowlisted writer model, pick a method, and press
+**Generate RCA**. The agent then plans, retrieves relevant past RCA memory,
+generates, critiques and revises a root-cause analysis using your selected
+model, and the finished report is rendered right on the page with a
 **Download PDF** button. You can also run the same problem through two methods
 and read them side by side.
 
-There is no login, no database, and nothing leaves your machine — the analysis
-runs through the same local model the CLI uses.
+There is optional Auth0 login/RBAC, and nothing leaves your machine in the
+local Ollama setup. Web job history and audit records are mirrored into a local
+SQLite database under `OUTPUT_DIR`.
 
 ---
 
@@ -42,7 +44,12 @@ The UI needs the API running, and the API needs a model to talk to.
    does not care which provider you use; it only talks to the API.)
 
 3. Confirm your `.env` points at the provider you want (`LLM_PROVIDER`,
-   `RCA_MODEL`, etc.).
+   `RCA_MODEL`, etc.). For UI model selection, set `RCA_ALLOWED_MODELS`
+   to the local writer models users may choose, for example:
+
+   ```text
+   RCA_ALLOWED_MODELS=qwen3:8b,qwen3.5:4b
+   ```
 
 4. Confirm the demo Excel memory exists:
 
@@ -101,13 +108,17 @@ The left-hand panel is the input form.
 - **Compare two methods** (toggle) — turn this on to reveal a second method
   selector. The same problem is then analysed by both methods and shown side by
   side (see section 8).
+- **Writer model** - choose one of the backend allowlisted local writer models.
+  Missing models are marked unavailable when the model-status endpoint can
+  confirm the Ollama catalog. The selection applies only to this run; it does
+  not rewrite `.env` or require a Docker rebuild.
 - **Severity** (optional) — low / medium / high / critical. Click again to
   clear it. Severity shifts the emphasis of the analysis.
 - **System area** (optional) — e.g. `payments`, `auth`, `batch jobs`.
 - **Context** (optional) — paste logs, a timeline, or recent changes. This text
   is treated strictly as data for the model to analyse, never as instructions.
 
-Press **Run analysis**. The button shows a spinner and the results panel takes
+Press **Generate RCA**. The button shows a spinner and the results panel takes
 over.
 
 ---
@@ -148,9 +159,10 @@ mirrors the PDF exactly and includes:
 - A header band with the problem, the method, the model, latency, and a
   **colour-coded confidence chip** (green = high, amber = medium, red = low).
 - **Executive summary**.
-- **Past RCA Memory** when similar incidents are found in the Excel workbook:
-  incident IDs, match scores, known root causes, immediate fixes, evidence
-  checked, and match reasons.
+- **Past RCA Memory** when similar incidents are found in the Excel workbook
+  and graph cache: incident IDs, retrieval mode, graph evidence paths, match
+  scores, known root causes, immediate fixes, evidence checked, and match
+  reasons.
 - **Why chain** — a numbered, deepening stepper; the final node (the root
   cause) is marked in dark.
 - **5-Why tree** — for the 5 Whys method, an interactive Mermaid diagram of the
@@ -175,9 +187,11 @@ In the report card header:
   printing to PDF yourself or sharing the single file).
 
 Artifacts for each web run are also written to disk under
-`outputs/ui/<job_id>/` (one PDF, HTML, and internal JSON artifact per method). The canonical
-`outputs/Agentic_RCA.{pdf,json,html}` is written by the CLI and MCP entry
-points.
+`outputs/ui/<job_id>/` (one PDF, HTML, and internal JSON artifact per method).
+The web UI stores durable job/event/artifact metadata in
+`outputs/app_state.sqlite` by default, so completed runs can still be browsed
+after a backend restart. The canonical `outputs/Agentic_RCA.{pdf,json,html}` is
+written by the CLI and MCP entry points.
 
 ---
 
@@ -196,6 +210,9 @@ frame the same incident.
 - **"provider unreachable" error card** — the model endpoint is down. If you are
   local, start Ollama (`ollama serve`) and confirm the model is pulled. If you
   are hosted, check `HOSTED_OPEN_BASE_URL` / `HOSTED_OPEN_API_KEY` in `.env`.
+- **Writer model is disabled in the dropdown** - the model is allowlisted but
+  was not returned by the Ollama catalog. Pull it with `ollama pull <model>` or
+  remove it from `RCA_ALLOWED_MODELS`.
 - **"provider auth" error** — a hosted endpoint rejected your key (HTTP 401).
 - **The page is blank or shows raw JSON** — open `http://127.0.0.1:8000/`
   (the root), not `/rca`.
@@ -207,7 +224,9 @@ frame the same incident.
   model or be patient. The agent loop is bounded (max 2 revise rounds plus a
   global timeout), so it always finishes with a report or a clean error.
 - **No Past RCA Memory section appears**: no workbook record crossed the
-  similarity threshold, or `RCA_MEMORY_ENABLED=false` in `.env`.
+  similarity threshold, or `RCA_MEMORY_ENABLED=false` in `.env`. If graph
+  retrieval cannot build its SQLite cache, the backend falls back to lexical
+  retrieval and reports the warning in `/ui/model-status`.
 
 ---
 

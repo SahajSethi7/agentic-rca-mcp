@@ -15,19 +15,24 @@ JSONL audit trail.
 - React + TypeScript + Tailwind web UI with live stage progress, report review,
   method comparison, and export links for PDF, standalone HTML, and matching
   past-RCA Excel records.
+- UI-selectable allowlisted writer models for per-run local Ollama generation
+  without editing `.env` or rebuilding Docker.
 - Shared RCA engine for the web UI, FastAPI API, CLI, and MCP server.
 - Three RCA methods: 5 Whys, Fishbone, and simplified Fault Tree.
 - OpenAI-compatible provider abstraction for local Ollama or hosted endpoints.
 - Default local model configuration using `qwen3:8b` for generation and
   `llama3.2:latest` for validation or evaluation.
-- Excel-backed past RCA memory with local similarity retrieval and optional
-  write-back.
+- Excel-backed past RCA memory with graph-boosted hybrid retrieval, compact
+  evidence paths, deterministic fallback, and optional write-back.
 - Deterministic critique checks for shallow why chains, symptom-as-cause
   issues, vague root causes, blame language, and method consistency.
 - Provider failure hardening that surfaces crashed/OOM-killed model servers and
   no-answer model responses instead of masking them as generic fallback RCAs.
 - Optional reviewer-model validation with confidence and validation notes.
-- Local PDF, HTML, internal JSON artifacts, and audit logs under `OUTPUT_DIR`.
+- Local PDF, HTML, internal JSON artifacts, JSONL audit logs, and durable
+  SQLite web job/audit history under `OUTPUT_DIR`.
+- Operator-facing model, memory graph, job history, disk, and system-memory
+  health through `/ui/model-status`.
 - Optional Auth0 OAuth/RBAC protection for the React UI and FastAPI routes.
 - Docker Compose setup with FastAPI, Nginx-served frontend, and Ollama.
 
@@ -39,13 +44,13 @@ All entry points use the same guarded workflow:
 Web UI / FastAPI / CLI / MCP
   -> RCAAgent
   -> input sanitizer
-  -> optional past RCA memory retrieval
+  -> optional past RCA memory and graph retrieval
   -> method-specific prompt
   -> model provider
   -> schema-validated RCAReport
   -> deterministic critique and bounded revision
   -> optional validation model
-  -> local artifacts and audit log
+  -> local artifacts, audit log, and durable job history
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
@@ -135,6 +140,8 @@ The API is available at:
 ```text
 GET  /health
 GET  /ui/model-status
+GET  /ui/jobs
+GET  /ui/jobs/{job_id}
 POST /rca
 ```
 
@@ -330,6 +337,7 @@ Common environment variables:
 | `LLM_PROVIDER` | `ollama` or `hosted` | `ollama` |
 | `OLLAMA_BASE_URL` | Local Ollama OpenAI-compatible endpoint | `http://localhost:11434/v1` |
 | `RCA_MODEL` | Generation model | `qwen3:8b` |
+| `RCA_ALLOWED_MODELS` | UI-selectable local writer models | `qwen3:8b,qwen3.5:4b` |
 | `RCA_MAX_OUTPUT_TOKENS` | Generation token budget | `4096` |
 | `VALIDATION_MODEL` | Optional reviewer model | unset locally, `llama3.2:latest` in Compose |
 | `RCA_VALIDATION_ENABLED` | Enable reviewer validation | `true` |
@@ -339,6 +347,11 @@ Common environment variables:
 | `RCA_MEMORY_MAX_MATCHES` | Maximum memory matches attached to prompts | `10` locally, `3` in Compose |
 | `RCA_MEMORY_MIN_SCORE` | Minimum similarity score | `0.50` |
 | `RCA_MEMORY_WRITEBACK_ENABLED` | Append completed RCAs to memory workbook | `false` locally, `true` in Compose |
+| `RCA_MEMORY_GRAPH_ENABLED` | Enable SQLite graph-boosted past RCA retrieval | `true` |
+| `RCA_MEMORY_GRAPH_PATH` | Derived graph cache path | `./outputs/cache/rca_memory_graph.sqlite` |
+| `RCA_JOB_HISTORY_PATH` | Durable SQLite job/audit history path | `./outputs/app_state.sqlite` |
+| `RCA_JOB_HISTORY_MAX_JOBS` | Maximum retained job records | `200` |
+| `RCA_JOB_HISTORY_RETENTION_DAYS` | Job history retention window | `30` |
 | `AUTH_ENABLED` | Enable Auth0 access-token enforcement | `false` |
 | `AUTH0_DOMAIN` | Auth0 tenant domain | unset |
 | `AUTH0_AUDIENCE` | Auth0 API identifier / token audience | unset |
@@ -363,6 +376,12 @@ Run the evaluation harness:
 python eval/run_eval.py
 ```
 
+Include repeated-incident memory retrieval cases:
+
+```bash
+python eval/run_eval.py --include-memory-cases
+```
+
 ## Security And Guardrails
 
 | Guardrail | Implementation |
@@ -378,8 +397,9 @@ python eval/run_eval.py
 | Provider crash surfacing | 5xx/OOM signatures such as `signal: killed` map to `provider_unreachable`. |
 | No-answer surfacing | Empty/truncated reasoning responses surface as `model_output_invalid`. |
 | Audit log | Each invocation writes a JSONL audit record with hashed problem text. |
+| Durable history | Web jobs, stage events, artifacts, and audit records are mirrored to local SQLite. |
 | OAuth/RBAC | Optional Auth0 JWT verification and route-level permission checks. |
-| Evidence handling | Past RCA memory is treated as supporting evidence, not ground truth. |
+| Evidence handling | Past RCA memory and graph paths are treated as supporting evidence, not ground truth. |
 
 ## Project Structure
 

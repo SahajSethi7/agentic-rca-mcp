@@ -10,9 +10,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api
+import model_status
 import web.jobs as jobs
 import web.routes as routes
-from config import Settings
+from config import Settings, _env_tuple
+from model_status import allowed_writer_models
 from schemas import RCAReport
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
@@ -23,6 +25,7 @@ class StubAgent:
     """Walks the agent stages via on_event and returns a fixture report."""
 
     def __init__(self, settings=None) -> None:
+        self.settings = settings or Settings()
         self.last_run_stats = {"rounds": 1, "validation_model": None, "sanitizer_findings": []}
 
     def run(self, problem, context=None, method="five_why", severity=None,
@@ -33,7 +36,7 @@ class StubAgent:
         if on_event:
             on_event("critiquing", {"round": 1})
             on_event("revising", {"round": 1})
-        payload = dict(_FIXTURE, method=method, problem=problem)
+        payload = dict(_FIXTURE, method=method, problem=problem, source_model=self.settings.rca_model)
         if on_event:
             on_event("done", {})
         return RCAReport.model_validate(payload)
@@ -90,16 +93,16 @@ def test_meta_lists_methods_and_stages(client, monkeypatch):
         "get_settings",
         lambda: Settings(
             rca_model="demo-writer:1b",
+            allowed_models=("demo-writer:1b", "demo-alt:4b"),
             validation_model="demo-validator:2b",
         ),
     )
     meta = client.get("/ui/meta").json()
     assert meta["methods"] == ["five_why", "fishbone", "fault_tree"]
     assert "critiquing" in meta["stages"]
-    assert meta["models"] == {
-        "writer": "demo-writer:1b",
-        "validator": "demo-validator:2b",
-    }
+    assert meta["models"]["writer"] == "demo-writer:1b"
+    assert meta["models"]["validator"] == "demo-validator:2b"
+    assert meta["models"]["allowed_writer_models"][0] == "demo-writer:1b"
     assert meta["memory"]["enabled"] is True
     assert isinstance(meta["memory"]["record_count"], int)
 
@@ -116,6 +119,7 @@ def test_model_status_endpoint_reports_readiness(client, monkeypatch):
                 "configured_model": "demo-writer:1b",
                 "reachable": True,
                 "available": True,
+                "allowed_models": [],
             },
             "validator": {
                 "enabled": True,
@@ -125,6 +129,8 @@ def test_model_status_endpoint_reports_readiness(client, monkeypatch):
             },
             "memory": {"enabled": True, "available": True, "record_count": 12},
             "system_memory": {"available_mb": 8192, "total_mb": 16384, "warning": None},
+            "output_storage": {"free_mb": 1024, "total_mb": 2048, "used_mb": 1024, "path": "tmp"},
+            "job_history": {"path": "tmp/app_state.sqlite", "total_runs": 0, "completed_runs": 0, "failed_runs": 0, "average_latency_seconds": None},
         },
     )
 
@@ -134,6 +140,45 @@ def test_model_status_endpoint_reports_readiness(client, monkeypatch):
     assert status["writer"]["configured_model"] == "demo-writer:1b"
     assert status["validator"]["reachable"] is True
     assert status["memory"]["record_count"] == 12
+
+
+def test_allowed_writer_models_do_not_implicitly_include_configured_model():
+    settings = Settings(rca_model="outside-allowlist:1b", allowed_models=("qwen3:8b",))
+
+    assert allowed_writer_models(settings) == ("qwen3:8b",)
+
+
+def test_empty_allowed_models_env_uses_documented_default(monkeypatch):
+    monkeypatch.setenv("RCA_ALLOWED_MODELS", "")
+
+    assert _env_tuple("RCA_ALLOWED_MODELS", "qwen3:8b,qwen3.5:4b") == ("qwen3:8b", "qwen3.5:4b")
+
+
+def test_model_status_endpoint_reachable_when_allowed_model_missing(monkeypatch, tmp_path):
+    settings = Settings(
+        output_dir=tmp_path,
+        job_history_path=tmp_path / "app_state.sqlite",
+        rca_model="missing:1b",
+        allowed_models=("missing:1b",),
+        validation_enabled=False,
+        memory_enabled=False,
+    )
+    monkeypatch.setattr(
+        model_status,
+        "_read_model_catalog",
+        lambda backend: {
+            "reachable": True,
+            "model_ids": ["other:1b"],
+            "error": None,
+            "url": "http://localhost:11434/v1/models",
+        },
+    )
+
+    status = model_status.get_model_status(settings)
+
+    assert status["writer"]["reachable"] is True
+    assert status["writer"]["available"] is False
+    assert status["overall"]["ready"] is False
 
 
 def test_analyze_streams_stages_and_renders_report(client):
@@ -171,6 +216,49 @@ def test_analyze_streams_stages_and_renders_report(client):
     assert "spreadsheetml.sheet" in xlsx.headers["content-type"]
     assert "attachment" in xlsx.headers.get("content-disposition", "")
     assert len(xlsx.content) > 2000
+
+
+def test_analyze_accepts_allowlisted_generation_model(client, monkeypatch, tmp_path):
+    settings = Settings(
+        output_dir=tmp_path,
+        validation_enabled=False,
+        rca_model="qwen3:8b",
+        allowed_models=("qwen3:8b", "qwen3.5:4b"),
+    )
+    monkeypatch.setattr(routes, "get_settings", lambda: settings)
+    monkeypatch.setattr(jobs, "get_settings", lambda: settings)
+
+    resp = client.post("/ui/analyze", json={
+        "problem_statement": "Checkout requests time out after a database migration",
+        "method": "five_why",
+        "generation_model": "qwen3.5:4b",
+    })
+
+    job_id = resp.json()["job_id"]
+    events = _drain(client, job_id)
+    result = next(e for e in events if e["type"] == "result")
+    assert result["report"]["source_model"] == "qwen3.5:4b"
+    saved = jobs.manager.history_job(job_id)
+    assert saved is not None
+    assert saved["runs"][0]["generation_model"] == "qwen3.5:4b"
+
+
+def test_analyze_rejects_disallowed_generation_model(client, monkeypatch, tmp_path):
+    settings = Settings(
+        output_dir=tmp_path,
+        validation_enabled=False,
+        allowed_models=("qwen3:8b",),
+    )
+    monkeypatch.setattr(routes, "get_settings", lambda: settings)
+
+    resp = client.post("/ui/analyze", json={
+        "problem_statement": "Checkout requests time out after a database migration",
+        "method": "five_why",
+        "generation_model": "not-approved:70b",
+    })
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error"] == "model_not_allowed"
 
 
 def test_compare_two_methods_runs_both(client):
@@ -216,6 +304,22 @@ def test_sse_stream_emits_events(client):
 
 def test_unknown_job_returns_404(client):
     assert client.get("/ui/status/deadbeef").status_code == 404
+
+
+def test_job_history_endpoint_lists_completed_runs(client):
+    resp = client.post("/ui/analyze", json={
+        "problem_statement": "Search latency tripled after a cache change",
+        "method": "five_why",
+    })
+    job_id = resp.json()["job_id"]
+    _drain(client, job_id)
+
+    history = client.get("/ui/jobs").json()
+
+    assert any(job["job_id"] == job_id for job in history["jobs"])
+    detail = client.get(f"/ui/jobs/{job_id}")
+    assert detail.status_code == 200
+    assert detail.json()["runs"][0]["report"]["root_cause"]
 
 
 def test_agent_construction_failure_does_not_hang_the_job(client):

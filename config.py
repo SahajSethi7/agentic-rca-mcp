@@ -15,11 +15,22 @@ def _env_bool(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_tuple(name: str, default: str) -> tuple[str, ...]:
+    raw = os.getenv(name)
+    source = default if raw is None or not raw.strip() else raw
+    return tuple(
+        value.strip()
+        for value in source.split(",")
+        if value.strip()
+    )
+
+
 @dataclass(frozen=True)
 class Settings:
     provider: str = os.getenv("LLM_PROVIDER", "ollama")
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
     rca_model: str = os.getenv("RCA_MODEL", "qwen3:8b")
+    allowed_models: tuple[str, ...] = _env_tuple("RCA_ALLOWED_MODELS", "qwen3:8b,qwen3.5:4b")
     hosted_base_url: str | None = os.getenv("HOSTED_OPEN_BASE_URL")
     hosted_api_key: str | None = os.getenv("HOSTED_OPEN_API_KEY")
     hosted_model: str | None = os.getenv("HOSTED_OPEN_MODEL")
@@ -41,6 +52,13 @@ class Settings:
     memory_writeback_enabled: bool = (
         _env_bool("RCA_MEMORY_WRITEBACK_ENABLED", "false")
     )
+    memory_graph_enabled: bool = _env_bool("RCA_MEMORY_GRAPH_ENABLED", "true")
+    memory_graph_path: Path = Path(
+        os.getenv("RCA_MEMORY_GRAPH_PATH", "./outputs/cache/rca_memory_graph.sqlite")
+    )
+    job_history_path: Path = Path(os.getenv("RCA_JOB_HISTORY_PATH", "./outputs/app_state.sqlite"))
+    job_history_max_jobs: int = int(os.getenv("RCA_JOB_HISTORY_MAX_JOBS", "200"))
+    job_history_retention_days: int = int(os.getenv("RCA_JOB_HISTORY_RETENTION_DAYS", "30"))
     eval_models: tuple[str, ...] = tuple(
         model.strip()
         for model in os.getenv("RCA_EVAL_MODELS", "qwen3:8b,llama3.2:latest").split(",")
