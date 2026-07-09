@@ -175,8 +175,9 @@ def test_api_rejects_chunked_body_over_size_limit(monkeypatch, tmp_path) -> None
 
 
 def test_rate_limit_key_uses_forwarded_for_only_from_trusted_proxy() -> None:
-    import api
     from starlette.requests import Request
+
+    import api
 
     trusted_request = Request(
         {

@@ -15,8 +15,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from ipaddress import ip_address, ip_network
 from collections import defaultdict, deque
+from ipaddress import ip_address, ip_network
 from pathlib import Path
 from typing import Any
 
