@@ -2,7 +2,7 @@ services:
   app:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       # Inside the compose network the Ollama service is reachable by name,
       # not localhost. Everything else passes through from the host shell or
@@ -31,14 +31,19 @@ services:
       RCA_MEMORY_PATH: ${RCA_MEMORY_PATH:-/app/data/past_rca_memory_sample_repaired.xlsx}
       RCA_MEMORY_MAX_MATCHES: ${RCA_MEMORY_MAX_MATCHES:-3}
       RCA_MEMORY_MIN_SCORE: ${RCA_MEMORY_MIN_SCORE:-0.50}
-      RCA_MEMORY_WRITEBACK_ENABLED: ${RCA_MEMORY_WRITEBACK_ENABLED:-true}
+      RCA_MEMORY_WRITEBACK_ENABLED: ${RCA_MEMORY_WRITEBACK_ENABLED:-false}
       RCA_MEMORY_GRAPH_ENABLED: ${RCA_MEMORY_GRAPH_ENABLED:-true}
       RCA_MEMORY_GRAPH_PATH: ${RCA_MEMORY_GRAPH_PATH:-/app/outputs/cache/rca_memory_graph.sqlite}
       RCA_JOB_HISTORY_PATH: ${RCA_JOB_HISTORY_PATH:-/app/outputs/app_state.sqlite}
       RCA_JOB_HISTORY_MAX_JOBS: ${RCA_JOB_HISTORY_MAX_JOBS:-200}
       RCA_JOB_HISTORY_RETENTION_DAYS: ${RCA_JOB_HISTORY_RETENTION_DAYS:-30}
+      RCA_TRUSTED_PROXY_HOSTS: ${RCA_TRUSTED_PROXY_HOSTS:-127.0.0.1,::1,172.16.0.0/12}
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
+      RCA_MEMORY_EMBEDDINGS_ENABLED: ${RCA_MEMORY_EMBEDDINGS_ENABLED:-true}
+      RCA_EMBEDDING_MODEL: ${RCA_EMBEDDING_MODEL:-nomic-embed-text}
+      RCA_MEMORY_SEMANTIC_WEIGHT: ${RCA_MEMORY_SEMANTIC_WEIGHT:-0.40}
+      RCA_MEMORY_EMBEDDINGS_PATH: ${RCA_MEMORY_EMBEDDINGS_PATH:-/app/outputs/cache/rca_memory_embeddings.sqlite}
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-}
       AUTH0_ALGORITHMS: ${AUTH0_ALGORITHMS:-RS256}
       AUTH_ADMIN_PERMISSION: ${AUTH_ADMIN_PERMISSION:-rca:admin}
@@ -58,14 +63,14 @@ services:
         VITE_AUTH0_CLIENT_ID: ${VITE_AUTH0_CLIENT_ID:-}
         VITE_AUTH0_AUDIENCE: ${VITE_AUTH0_AUDIENCE:-}
     ports:
-      - "5173:80"
+      - "127.0.0.1:5173:80"
     depends_on:
       - app
 
   ollama:
     image: ollama/ollama:latest
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama:/root/.ollama
 

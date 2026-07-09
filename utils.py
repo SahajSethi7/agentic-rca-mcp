@@ -37,6 +37,7 @@ ERROR_STATUS: dict[str, int] = {
     "provider_timeout": 504,
     "model_output_invalid": 502,
     "write_denied": 500,
+    "rate_limited": 429,
     "internal_error": 500,
 }
 
@@ -176,6 +177,7 @@ def append_audit_record(
     settings: Settings | None = None,
     entry_point: str,
     problem_statement: str,
+    problem_sha256: str | None = None,
     method: str,
     success: bool,
     generation_model: str | None = None,
@@ -202,7 +204,7 @@ def append_audit_record(
     record: dict[str, Any] = {
         "ts": utc_now_iso(),
         "entry_point": entry_point,
-        "problem_sha256": hash_problem(problem_statement),
+        "problem_sha256": problem_sha256 or hash_problem(problem_statement),
         "method": method,
         "success": success,
         "generation_model": generation_model,

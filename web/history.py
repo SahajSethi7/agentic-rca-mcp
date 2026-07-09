@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from config import Settings, get_settings
+from utils import hash_problem
 
 logger = logging.getLogger("agentic_rca.web.history")
 
@@ -38,6 +39,27 @@ def _loads(value: str | None, default: Any) -> Any:
         return default
 
 
+def _public_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep durable job history useful without storing raw incident text."""
+    problem = payload.get("problem_statement")
+    context = payload.get("context")
+    public: dict[str, Any] = {
+        "method": payload.get("method"),
+        "compare_method": payload.get("compare_method"),
+        "severity": payload.get("severity"),
+        "system_area": payload.get("system_area"),
+        "generation_model": payload.get("generation_model"),
+        "validation_model": payload.get("validation_model"),
+        "has_context": isinstance(context, str) and bool(context.strip()),
+    }
+    if isinstance(problem, str):
+        public["problem_sha256"] = hash_problem(problem)
+        public["problem_length"] = len(problem)
+    if isinstance(context, str):
+        public["context_length"] = len(context)
+    return {key: value for key, value in public.items() if value is not None}
+
+
 class JobHistoryStore:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
@@ -45,13 +67,17 @@ class JobHistoryStore:
 
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=30)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 5000")
+        conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS jobs (
                 job_id TEXT PRIMARY KEY,
                 payload_json TEXT NOT NULL,
+                owner_subject TEXT,
+                actor_json TEXT,
                 done INTEGER NOT NULL DEFAULT 0,
                 created_at_ms INTEGER NOT NULL,
                 updated_at_ms INTEGER NOT NULL
@@ -92,7 +118,21 @@ class JobHistoryStore:
             CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_records(created_at_ms DESC);
             """
         )
+        self._ensure_job_columns(conn)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_jobs_owner ON jobs(owner_subject, updated_at_ms DESC)"
+        )
         return conn
+
+    def _ensure_job_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(jobs)").fetchall()
+        }
+        if "owner_subject" not in columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN owner_subject TEXT")
+        if "actor_json" not in columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN actor_json TEXT")
 
     @contextmanager
     def _connection(self):
@@ -106,13 +146,25 @@ class JobHistoryStore:
     def record_job(self, job: Any) -> None:
         try:
             created = getattr(job, "created_at_ms", now_ms())
+            actor = getattr(job, "actor", {}) or {}
+            owner_subject = actor.get("actor_subject") if isinstance(actor, dict) else None
             with self._connection() as conn:
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO jobs(job_id, payload_json, done, created_at_ms, updated_at_ms)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO jobs(
+                        job_id, payload_json, owner_subject, actor_json, done, created_at_ms, updated_at_ms
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (job.id, _json(job.payload), int(bool(job.done)), created, now_ms()),
+                    (
+                        job.id,
+                        _json(_public_payload(job.payload)),
+                        owner_subject,
+                        _json(actor),
+                        int(bool(job.done)),
+                        created,
+                        now_ms(),
+                    ),
                 )
                 for run in job.runs:
                     self.update_run(run, job_id=job.id, conn=conn)
@@ -201,23 +253,39 @@ class JobHistoryStore:
         except Exception:
             logger.warning("Audit history write failed; continuing.", exc_info=True)
 
-    def list_jobs(self, *, limit: int = 40) -> list[dict[str, Any]]:
+    def list_jobs(
+        self,
+        *,
+        limit: int = 40,
+        owner_subject: str | None = None,
+        include_all: bool = False,
+    ) -> list[dict[str, Any]]:
         try:
             with self._connection() as conn:
-                rows = conn.execute(
-                    "SELECT * FROM jobs ORDER BY updated_at_ms DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
-                return [self._job_from_row(conn, row) for row in rows]
+                if include_all:
+                    rows = conn.execute(
+                        "SELECT * FROM jobs ORDER BY updated_at_ms DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        """
+                        SELECT * FROM jobs
+                        WHERE owner_subject = ?
+                        ORDER BY updated_at_ms DESC LIMIT ?
+                        """,
+                        (owner_subject, limit),
+                    ).fetchall()
+                return [self._job_from_row(conn, row, include_private=False) for row in rows]
         except Exception:
             logger.warning("Job history read failed; returning empty history.", exc_info=True)
             return []
 
-    def get_job(self, job_id: str) -> dict[str, Any] | None:
+    def get_job(self, job_id: str, *, include_private: bool = True) -> dict[str, Any] | None:
         try:
             with self._connection() as conn:
                 row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
-                return self._job_from_row(conn, row) if row else None
+                return self._job_from_row(conn, row, include_private=include_private) if row else None
         except Exception:
             logger.warning("Job history read failed.", exc_info=True)
             return None
@@ -291,7 +359,13 @@ class JobHistoryStore:
                 return Path(run[field])
         return None
 
-    def _job_from_row(self, conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
+    def _job_from_row(
+        self,
+        conn: sqlite3.Connection,
+        row: sqlite3.Row,
+        *,
+        include_private: bool,
+    ) -> dict[str, Any]:
         run_rows = conn.execute(
             "SELECT * FROM runs WHERE job_id = ? ORDER BY run_index",
             (row["job_id"],),
@@ -300,7 +374,7 @@ class JobHistoryStore:
             "SELECT event_json, created_at_ms FROM events WHERE job_id = ? ORDER BY id",
             (row["job_id"],),
         ).fetchall()
-        return {
+        job = {
             "job_id": row["job_id"],
             "payload": _loads(row["payload_json"], {}),
             "done": bool(row["done"]),
@@ -312,6 +386,10 @@ class JobHistoryStore:
                 for event in event_rows
             ],
         }
+        if include_private:
+            job["_owner_subject"] = row["owner_subject"]
+            job["_actor"] = _loads(row["actor_json"], {})
+        return job
 
     def _run_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
         report = _loads(row["report_json"], None)

@@ -8,6 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 RCAMethod = Literal["five_why", "fishbone", "fault_tree"]
 RCA_METHODS: tuple[RCAMethod, ...] = ("five_why", "fishbone", "fault_tree")
+MAX_PROBLEM_STATEMENT_LENGTH = 65_536
+MAX_CONTEXT_LENGTH = 131_072
+MAX_SYSTEM_AREA_LENGTH = 512
 
 
 class KnownIssueMatch(BaseModel):
@@ -49,10 +52,12 @@ class RCAInput(BaseModel):
 
     problem_statement: str = Field(
         min_length=10,
+        max_length=MAX_PROBLEM_STATEMENT_LENGTH,
         description="Clear description of the incident, symptom, or operational problem.",
     )
     context: str | None = Field(
         default=None,
+        max_length=MAX_CONTEXT_LENGTH,
         description="Optional supporting facts such as logs, timeline, alerts, or recent changes.",
     )
     method: RCAMethod = Field(
@@ -65,6 +70,7 @@ class RCAInput(BaseModel):
     )
     system_area: str | None = Field(
         default=None,
+        max_length=MAX_SYSTEM_AREA_LENGTH,
         description="Optional affected system area, e.g. 'payments', 'auth', 'batch jobs'.",
     )
 
@@ -287,6 +293,7 @@ class StructuredError(BaseModel):
         "provider_timeout",
         "model_output_invalid",
         "write_denied",
+        "rate_limited",
         "internal_error",
     ] = Field(description="Stable, machine-readable failure category.")
     message: str = Field(

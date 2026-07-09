@@ -11,6 +11,7 @@ from html_generator import (
     render_report_body,
     report_summary_json,
 )
+from pdf_generator import build_pdf
 from schemas import RCAReport
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
@@ -42,7 +43,9 @@ def test_five_why_renders_mermaid_tree() -> None:
     html = build_html(_load("sample_rca_1"))
     assert "class='mermaid'" in html
     assert "graph TD" in html
-    assert "mermaid@10" in html  # CDN enhancement script included
+    assert "mermaid@10" not in html
+    assert "fonts.googleapis.com" not in html
+    assert "tree-card failed" in html
 
 
 def test_tree_can_be_disabled() -> None:
@@ -70,6 +73,20 @@ def test_user_text_is_escaped() -> None:
     html = build_html(report)
     assert "<script>alert" not in html
     assert "&lt;script&gt;" in html
+
+
+def test_pdf_escapes_reportlab_markup_chars(tmp_path: Path) -> None:
+    report = _load("sample_rca_1").model_copy(
+        update={
+            "problem": "A & B < C caused report rendering trouble",
+            "root_cause": "Missing PDF escaping allowed <font> markup & parser failures.",
+        }
+    )
+
+    output = build_pdf(report, tmp_path / "report.pdf")
+
+    assert output.exists()
+    assert output.stat().st_size > 800
 
 
 def test_render_body_has_no_document_shell() -> None:

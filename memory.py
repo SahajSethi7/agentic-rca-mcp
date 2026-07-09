@@ -854,8 +854,16 @@ def _clip_excel_text(value: str | None, limit: int = 8000) -> str:
     return text[: limit - 14].rstrip() + " ...[truncated]"
 
 
+def _strip_memory_prompt_fences(value: str | None) -> str:
+    from sanitizer import UNTRUSTED_END, UNTRUSTED_START
+
+    text = _text(value)
+    return text.replace(UNTRUSTED_START, "").replace(UNTRUSTED_END, "")
+
+
 def _join_short(items: list[str], *, limit: int = 8000) -> str:
-    return _clip_excel_text("; ".join(item.strip() for item in items if item.strip()), limit)
+    text = "; ".join(item.strip() for item in items if item.strip())
+    return _clip_excel_text(_strip_memory_prompt_fences(text), limit)
 
 
 def _generated_incident_id(rca_input: RCAInput, report: RCAReport, timestamp: datetime) -> str:
@@ -899,15 +907,19 @@ def _build_memory_writeback_record(
     return {
         "incident_id": _generated_incident_id(rca_input, report, timestamp),
         "date": timestamp.date().isoformat(),
-        "system_area": _clip_excel_text(rca_input.system_area),
+        "system_area": _clip_excel_text(_strip_memory_prompt_fences(rca_input.system_area)),
         "service_name": "",
         "error_signature": "",
-        "problem_statement": _clip_excel_text(rca_input.problem_statement),
-        "symptoms": _clip_excel_text(rca_input.context or ""),
-        "root_cause": _clip_excel_text(report.root_cause),
-        "immediate_fix": _clip_excel_text(recommendations[0] if recommendations else ""),
+        "problem_statement": _clip_excel_text(_strip_memory_prompt_fences(rca_input.problem_statement)),
+        "symptoms": _clip_excel_text(_strip_memory_prompt_fences(rca_input.context or "")),
+        "root_cause": _clip_excel_text(_strip_memory_prompt_fences(report.root_cause)),
+        "immediate_fix": _clip_excel_text(
+            _strip_memory_prompt_fences(recommendations[0] if recommendations else "")
+        ),
         "long_term_fix": _join_short(recommendations[1:]),
-        "evidence_checked": _clip_excel_text(" | ".join(evidence_parts)),
+        "evidence_checked": _clip_excel_text(
+            _strip_memory_prompt_fences(" | ".join(evidence_parts))
+        ),
         "owner_team": "",
         "tags": _join_short(tags, limit=2000),
         "confidence": report.confidence,

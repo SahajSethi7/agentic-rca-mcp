@@ -13,7 +13,12 @@ shares the identical guarded pipeline.
 from __future__ import annotations
 
 import logging
+import threading
+import time
+from ipaddress import ip_address, ip_network
+from collections import defaultdict, deque
 from pathlib import Path
+from typing import Any
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -36,6 +41,122 @@ logger = logging.getLogger("agentic_rca.api")
 
 
 app = FastAPI(title="RCA Assistant API")
+_RATE_LIMIT_LOCK = threading.Lock()
+_RATE_LIMIT_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
+_BODY_LIMIT_METHODS = {"POST", "PUT", "PATCH"}
+
+
+def _structured_body_too_large(max_bytes: int) -> JSONResponse:
+    structured = StructuredError(
+        error_type="invalid_input",
+        message="The request body is too large.",
+        detail=f"max_request_body_bytes={max_bytes}",
+        timestamp=utc_now_iso(),
+    )
+    return JSONResponse(status_code=413, content=structured.model_dump())
+
+
+def _trusted_proxy(host: str | None, trusted_hosts: tuple[str, ...]) -> bool:
+    if not host:
+        return False
+    try:
+        remote = ip_address(host)
+    except ValueError:
+        return host in trusted_hosts
+    for trusted in trusted_hosts:
+        try:
+            if "/" in trusted:
+                if remote in ip_network(trusted, strict=False):
+                    return True
+            elif remote == ip_address(trusted):
+                return True
+        except ValueError:
+            if host == trusted:
+                return True
+    return False
+
+
+def _rate_limit_key(request: Request, trusted_hosts: tuple[str, ...]) -> str:
+    client_host = request.client.host if request.client else None
+    if _trusted_proxy(client_host, trusted_hosts):
+        real_ip = request.headers.get("x-real-ip", "").strip()
+        if real_ip:
+            return real_ip
+        forwarded_for = request.headers.get("x-forwarded-for", "")
+        forwarded_host = forwarded_for.rsplit(",", 1)[-1].strip()
+        if forwarded_host:
+            return forwarded_host
+    return client_host or "unknown"
+
+
+async def _enforce_streaming_body_limit(request: Request, max_bytes: int) -> JSONResponse | None:
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_bytes:
+                return _structured_body_too_large(max_bytes)
+        except ValueError:
+            pass
+
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > max_bytes:
+            return _structured_body_too_large(max_bytes)
+
+    buffered_body = bytes(body)
+    request._body = buffered_body  # type: ignore[attr-defined]
+    replayed = False
+
+    async def receive() -> dict[str, Any]:
+        nonlocal replayed
+        if replayed:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        replayed = True
+        return {"type": "http.request", "body": buffered_body, "more_body": False}
+
+    request._receive = receive  # type: ignore[attr-defined]
+    return None
+
+
+@app.middleware("http")
+async def request_guard(request: Request, call_next):
+    settings = get_settings()
+    if request.method in _BODY_LIMIT_METHODS:
+        size_error = await _enforce_streaming_body_limit(
+            request,
+            settings.max_request_body_bytes,
+        )
+        if size_error is not None:
+            return size_error
+
+        if settings.rate_limit_per_minute > 0:
+            client = _rate_limit_key(request, settings.trusted_proxy_hosts)
+            now = time.monotonic()
+            with _RATE_LIMIT_LOCK:
+                bucket = _RATE_LIMIT_BUCKETS[client]
+                while bucket and now - bucket[0] > 60:
+                    bucket.popleft()
+                if len(bucket) >= settings.rate_limit_per_minute:
+                    structured = StructuredError(
+                        error_type="rate_limited",
+                        message="Too many requests. Try again shortly.",
+                        detail="rate_limit_exceeded",
+                        timestamp=utc_now_iso(),
+                    )
+                    return JSONResponse(status_code=429, content=structured.model_dump())
+                bucket.append(now)
+    return await call_next(request)
+
+
+@app.on_event("startup")
+async def warn_when_auth_disabled() -> None:
+    settings = get_settings()
+    if not settings.auth_enabled:
+        logger.warning(
+            "AUTH_ENABLED=false: RCA routes are unauthenticated. Bind ports to loopback "
+            "or enable Auth0 before exposing this service."
+        )
 
 # Phase 6: mount the web UI job/streaming routes on this same app, so the
 # browser inherits the guarded pipeline (sanitization, structured errors, audit

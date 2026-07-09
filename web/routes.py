@@ -31,9 +31,15 @@ from model_status import (
     configured_writer_model,
     get_model_status,
 )
-from schemas import RCA_METHODS, RCAMethod
+from schemas import (
+    MAX_CONTEXT_LENGTH,
+    MAX_PROBLEM_STATEMENT_LENGTH,
+    MAX_SYSTEM_AREA_LENGTH,
+    RCA_METHODS,
+    RCAMethod,
+)
 from utils import append_audit_record, utc_now_iso
-from web.jobs import STAGES, Job, manager
+from web.jobs import STAGES, Job, JobCapacityError, manager
 
 router = APIRouter()
 
@@ -41,14 +47,14 @@ router = APIRouter()
 class AnalyzeRequest(BaseModel):
     """Body posted by the UI form. Mirrors RCAInput plus a comparison method."""
 
-    problem_statement: str = Field(min_length=10)
-    context: str | None = None
+    problem_statement: str = Field(min_length=10, max_length=MAX_PROBLEM_STATEMENT_LENGTH)
+    context: str | None = Field(default=None, max_length=MAX_CONTEXT_LENGTH)
     method: RCAMethod = "five_why"
     compare_method: RCAMethod | None = None
-    severity: str | None = None
-    system_area: str | None = None
-    generation_model: str | None = None
-    validation_model: str | None = None
+    severity: str | None = Field(default=None, max_length=32)
+    system_area: str | None = Field(default=None, max_length=MAX_SYSTEM_AREA_LENGTH)
+    generation_model: str | None = Field(default=None, max_length=128)
+    validation_model: str | None = Field(default=None, max_length=128)
 
 
 def _methods_for(req: AnalyzeRequest) -> list[str]:
@@ -139,8 +145,16 @@ def analyze(
             },
         )
     payload = req.model_dump()
-    payload["_actor"] = auth.audit_fields()
-    job = manager.start(payload, _methods_for(req))
+    try:
+        job = manager.start(payload, _methods_for(req), actor=auth.audit_fields())
+    except JobCapacityError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "analysis_capacity_exhausted",
+                "message": "Too many RCA analyses are already running. Try again shortly.",
+            },
+        ) from exc
     return JSONResponse(
         {
             "job_id": job.id,
@@ -156,8 +170,18 @@ def list_jobs(
     auth: AuthContext = Depends(require_permission("rca:read")),
 ) -> dict:
     """Return durable web job history from SQLite."""
-    _ = auth
-    return {"jobs": manager.history(limit=limit)}
+    include_all = _can_read_all_jobs(auth)
+    owner_subject = None if include_all else auth.subject
+    return {
+        "jobs": [
+            _public_job(job)
+            for job in manager.history(
+                limit=limit,
+                owner_subject=owner_subject,
+                include_all=include_all,
+            )
+        ]
+    }
 
 
 @router.get("/ui/jobs/{job_id}")
@@ -166,11 +190,10 @@ def job_detail(
     auth: AuthContext = Depends(require_permission("rca:read")),
 ) -> JSONResponse:
     """Return a single durable job history record."""
-    _ = auth
-    job = manager.history_job(job_id)
-    if job is None:
+    job = manager.history_job(job_id, include_private=True)
+    if job is None or not _can_access_owner(job.get("_owner_subject"), auth):
         return JSONResponse({"error": "unknown job"}, status_code=404)
-    return JSONResponse(job)
+    return JSONResponse(_public_job(job))
 
 
 @router.get("/ui/audit")
@@ -189,6 +212,43 @@ def _job_or_404(job_id: str) -> Job | None:
     return manager.get(job_id)
 
 
+def _can_read_all_jobs(auth: AuthContext) -> bool:
+    return not auth.enabled or auth.has_permission("rca:audit", get_settings())
+
+
+def _can_access_owner(owner_subject: str | None, auth: AuthContext) -> bool:
+    if not auth.enabled:
+        return True
+    if auth.has_permission("rca:audit", get_settings()):
+        return True
+    return bool(owner_subject and auth.subject == owner_subject)
+
+
+def _can_access_job_id(job_id: str, auth: AuthContext) -> bool:
+    live = manager.get(job_id)
+    if live is not None:
+        return _can_access_owner(live.owner_subject, auth)
+    saved = manager.history_job(job_id, include_private=True)
+    if saved is None:
+        return False
+    return _can_access_owner(saved.get("_owner_subject"), auth)
+
+
+def _history_job_for_auth(job_id: str, auth: AuthContext) -> dict | None:
+    saved = manager.history_job(job_id, include_private=True)
+    if saved is None or not _can_access_owner(saved.get("_owner_subject"), auth):
+        return None
+    return saved
+
+
+def _public_job(job: dict) -> dict:
+    return {
+        key: value
+        for key, value in job.items()
+        if not key.startswith("_")
+    }
+
+
 @router.get("/ui/events/{job_id}")
 def events(
     job_id: str,
@@ -199,19 +259,44 @@ def events(
     job = _job_or_404(job_id)
 
     def stream():
-        if job is None:
+        if job is not None and _can_access_owner(job.owner_subject, auth):
+            cursor = 0
+            while True:
+                new, cursor, done = job.events_since(cursor)
+                for event in new:
+                    yield f"data: {json.dumps(event)}\n\n"
+                if done and not new:
+                    yield "event: end\ndata: {}\n\n"
+                    return
+                time.sleep(0.12)
+            return
+
+        if job is not None:
+            yield f"data: {json.dumps({'type': 'error', 'error': {'message': 'unknown job'}})}\n\n"
+            yield "event: end\ndata: {}\n\n"
+            return
+
+        saved = _history_job_for_auth(job_id, auth)
+        if saved is None:
             yield f"data: {json.dumps({'type': 'error', 'error': {'message': 'unknown job'}})}\n\n"
             yield "event: end\ndata: {}\n\n"
             return
         cursor = 0
         while True:
-            new, cursor, done = job.events_since(cursor)
-            for event in new:
-                yield f"data: {json.dumps(event)}\n\n"
-            if done and not new:
+            saved = _history_job_for_auth(job_id, auth)
+            if saved is None:
+                yield f"data: {json.dumps({'type': 'error', 'error': {'message': 'unknown job'}})}\n\n"
                 yield "event: end\ndata: {}\n\n"
                 return
-            time.sleep(0.12)
+            all_events = saved.get("events", [])
+            new = all_events[cursor:]
+            cursor += len(new)
+            for event in new:
+                yield f"data: {json.dumps(event)}\n\n"
+            if saved.get("done") and not new:
+                yield "event: end\ndata: {}\n\n"
+                return
+            time.sleep(0.25)
 
     return StreamingResponse(
         stream(),
@@ -232,13 +317,25 @@ def status(
 ) -> JSONResponse:
     """Polling fallback: return events since ``cursor`` plus the done flag."""
     job = _job_or_404(job_id)
-    if job is None:
+    if job is not None and _can_access_owner(job.owner_subject, auth):
+        new, next_cursor, done = job.events_since(cursor)
+        return JSONResponse({"events": new, "cursor": next_cursor, "done": done})
+    if job is not None:
         return JSONResponse({"error": "unknown job"}, status_code=404)
-    new, next_cursor, done = job.events_since(cursor)
+
+    saved = _history_job_for_auth(job_id, auth)
+    if saved is None:
+        return JSONResponse({"error": "unknown job"}, status_code=404)
+    events = saved.get("events", [])
+    new = events[cursor:]
+    next_cursor = cursor + len(new)
+    done = bool(saved.get("done"))
     return JSONResponse({"events": new, "cursor": next_cursor, "done": done})
 
 
-def _run_artifact(job_id: str, index: int, kind: str):
+def _run_artifact(job_id: str, index: int, kind: str, auth: AuthContext):
+    if not _can_access_job_id(job_id, auth):
+        return JSONResponse({"error": "unknown job/run"}, status_code=404)
     path = manager.artifact_path(job_id, index, kind)
     if path is None:
         return JSONResponse({"error": "unknown job/run"}, status_code=404)
@@ -257,6 +354,7 @@ def _audit_artifact_access(
     job = _job_or_404(job_id)
     method = ""
     problem_statement = ""
+    problem_hash = None
     if job is not None and 0 <= index < len(job.runs):
         run = job.runs[index]
         method = run.method
@@ -265,20 +363,26 @@ def _audit_artifact_access(
         saved = manager.history_job(job_id)
         if not saved:
             return
-        problem_statement = saved.get("payload", {}).get("problem_statement", "")
+        payload = saved.get("payload", {})
+        problem_hash = payload.get("problem_sha256") if isinstance(payload, dict) else None
         for run in saved.get("runs", []):
             if run.get("index") == index:
                 method = run.get("method", "")
                 break
-    append_audit_record(
-        settings=get_settings(),
-        entry_point="web",
-        problem_statement=problem_statement,
-        method=method,
-        success=True,
-        action="artifact.access",
-        artifact_kind=kind,
+    audit_kwargs = {
+        "settings": get_settings(),
+        "entry_point": "web",
+        "problem_statement": problem_statement,
+        "method": method,
+        "success": True,
+        "action": "artifact.access",
+        "artifact_kind": kind,
         **auth.audit_fields(),
+    }
+    if not problem_statement and isinstance(problem_hash, str):
+        audit_kwargs["problem_sha256"] = problem_hash
+    append_audit_record(
+        **audit_kwargs,
     )
 
 
@@ -288,7 +392,7 @@ def download_pdf(
     index: int,
     auth: AuthContext = Depends(require_permission("rca:download")),
 ):
-    result = _run_artifact(job_id, index, "pdf")
+    result = _run_artifact(job_id, index, "pdf", auth)
     if isinstance(result, JSONResponse):
         return result
     _audit_artifact_access(job_id=job_id, index=index, kind="pdf", auth=auth)
@@ -306,7 +410,7 @@ def view_html(
     index: int,
     auth: AuthContext = Depends(require_permission("rca:read")),
 ):
-    result = _run_artifact(job_id, index, "html")
+    result = _run_artifact(job_id, index, "html", auth)
     if isinstance(result, JSONResponse):
         return result
     _audit_artifact_access(job_id=job_id, index=index, kind="html", auth=auth)
@@ -319,7 +423,7 @@ def download_matching_past_rcas(
     index: int,
     auth: AuthContext = Depends(require_permission("rca:download")),
 ):
-    result = _run_artifact(job_id, index, "xlsx")
+    result = _run_artifact(job_id, index, "xlsx", auth)
     if isinstance(result, JSONResponse):
         return result
     _audit_artifact_access(job_id=job_id, index=index, kind="xlsx", auth=auth)

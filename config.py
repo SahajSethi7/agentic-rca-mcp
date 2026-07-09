@@ -25,6 +25,11 @@ def _env_tuple(name: str, default: str) -> tuple[str, ...]:
     )
 
 
+def _env_trusted_proxies() -> tuple[str, ...]:
+    # Trusted proxies must overwrite X-Real-IP or strip any client-supplied copy.
+    return _env_tuple("RCA_TRUSTED_PROXY_HOSTS", "127.0.0.1,::1")
+
+
 @dataclass(frozen=True)
 class Settings:
     provider: str = os.getenv("LLM_PROVIDER", "ollama")
@@ -68,6 +73,13 @@ class Settings:
     job_history_path: Path = Path(os.getenv("RCA_JOB_HISTORY_PATH", "./outputs/app_state.sqlite"))
     job_history_max_jobs: int = int(os.getenv("RCA_JOB_HISTORY_MAX_JOBS", "200"))
     job_history_retention_days: int = int(os.getenv("RCA_JOB_HISTORY_RETENTION_DAYS", "30"))
+    web_max_concurrent_jobs: int = int(os.getenv("RCA_WEB_MAX_CONCURRENT_JOBS", "2"))
+    web_max_concurrent_jobs_per_subject: int = int(
+        os.getenv("RCA_WEB_MAX_CONCURRENT_JOBS_PER_SUBJECT", "2")
+    )
+    max_request_body_bytes: int = int(os.getenv("RCA_MAX_REQUEST_BODY_BYTES", "262144"))
+    rate_limit_per_minute: int = int(os.getenv("RCA_RATE_LIMIT_PER_MINUTE", "120"))
+    trusted_proxy_hosts: tuple[str, ...] = _env_trusted_proxies()
     recommended_memory_mb: int = int(os.getenv("RCA_RECOMMENDED_MEMORY_MB", "8192"))
     eval_models: tuple[str, ...] = tuple(
         model.strip()
@@ -92,4 +104,11 @@ def get_settings() -> Settings:
             if algorithm.strip()
         ),
         auth_admin_permission=os.getenv("AUTH_ADMIN_PERMISSION", "rca:admin"),
+        web_max_concurrent_jobs=int(os.getenv("RCA_WEB_MAX_CONCURRENT_JOBS", "2")),
+        web_max_concurrent_jobs_per_subject=int(
+            os.getenv("RCA_WEB_MAX_CONCURRENT_JOBS_PER_SUBJECT", "2")
+        ),
+        max_request_body_bytes=int(os.getenv("RCA_MAX_REQUEST_BODY_BYTES", "262144")),
+        rate_limit_per_minute=int(os.getenv("RCA_RATE_LIMIT_PER_MINUTE", "120")),
+        trusted_proxy_hosts=_env_trusted_proxies(),
     )

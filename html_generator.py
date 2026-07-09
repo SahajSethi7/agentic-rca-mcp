@@ -235,7 +235,7 @@ REPORT_CSS = """
 }
 """
 
-MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"
+MERMAID_CDN = ""
 
 
 # --------------------------------------------------------------------------- #
@@ -465,7 +465,7 @@ def _mermaid_tree(report: RCAReport) -> str:
     lines.append("  classDef root fill:#061a2f,stroke:#061a2f,color:#ffffff;")
     graph = "\n".join(lines)
     return (
-        "<section class='rca-card tree-card'><h2 class='rca-h2'>5-Why Tree</h2>"
+        "<section class='rca-card tree-card failed'><h2 class='rca-h2'>5-Why Tree</h2>"
         "<p class='hint'>Each step deepens the cause; the final node is the durable root cause.</p>"
         f"<div class='mermaid-wrap'><pre class='mermaid'>{escape(graph)}</pre>"
         "<div class='tree-fallback'>Interactive tree unavailable offline - see the "
@@ -521,7 +521,7 @@ def build_html(report: RCAReport, *, include_tree: bool = True) -> str:
     body = render_report_body(report, include_tree=include_tree)
     has_tree = "class='mermaid'" in body
     mermaid_script = ""
-    if has_tree:
+    if has_tree and MERMAID_CDN:
         mermaid_script = (
             f"<script src='{MERMAID_CDN}'></script>"
             "<script>"
@@ -549,8 +549,6 @@ def build_html(report: RCAReport, *, include_tree: bool = True) -> str:
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<title>RCA Assistant Report</title>"
-        "<link rel='preconnect' href='https://fonts.googleapis.com'>"
-        "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap' rel='stylesheet'>"
         f"<style>{REPORT_CSS}\nbody{{margin:0;background:var(--bg);padding:32px 18px}}</style>"
         "</head><body>"
         f"{body}{mermaid_script}"

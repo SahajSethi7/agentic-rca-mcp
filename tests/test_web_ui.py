@@ -11,9 +11,11 @@ from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
 import api
+import auth as auth_module
 import model_status
 import web.jobs as jobs
 import web.routes as routes
+from auth import AuthContext
 from config import Settings, _env_tuple
 from memory import MEMORY_COLUMNS
 from model_status import allowed_writer_models
@@ -479,6 +481,72 @@ def test_job_history_endpoint_lists_completed_runs(client):
     detail = client.get(f"/ui/jobs/{job_id}")
     assert detail.status_code == 200
     assert detail.json()["runs"][0]["report"]["root_cause"]
+
+
+def test_status_falls_back_to_durable_history_when_live_job_is_missing(client):
+    resp = client.post("/ui/analyze", json={
+        "problem_statement": "Search latency tripled after a cache change",
+        "method": "five_why",
+    })
+    job_id = resp.json()["job_id"]
+    _drain(client, job_id)
+    with jobs.manager._lock:
+        jobs.manager._jobs.pop(job_id, None)
+
+    status = client.get(f"/ui/status/{job_id}?cursor=0")
+
+    assert status.status_code == 200
+    body = status.json()
+    assert body["done"] is True
+    assert any(event["type"] == "result" for event in body["events"])
+
+
+def test_job_history_redacts_payload_and_artifacts_are_owner_scoped(client):
+    def as_user(subject: str, permissions: set[str]):
+        return AuthContext(
+            enabled=True,
+            authenticated=True,
+            subject=subject,
+            email=f"{subject}@example.com",
+            permissions=frozenset(permissions),
+        )
+
+    api.app.dependency_overrides[auth_module.get_auth_context] = lambda: as_user(
+        "user-a",
+        {"rca:read", "rca:write", "rca:download"},
+    )
+    try:
+        resp = client.post("/ui/analyze", json={
+            "problem_statement": "Sensitive checkout incident after database migration",
+            "context": "customer token abc123 appeared in debug logs",
+            "method": "five_why",
+        })
+        job_id = resp.json()["job_id"]
+        _drain(client, job_id)
+
+        history = client.get("/ui/jobs").json()
+        job = next(item for item in history["jobs"] if item["job_id"] == job_id)
+        assert "problem_statement" not in job["payload"]
+        assert "context" not in job["payload"]
+        assert "_actor" not in job
+        assert job["payload"]["problem_sha256"]
+
+        api.app.dependency_overrides[auth_module.get_auth_context] = lambda: as_user(
+            "user-b",
+            {"rca:read", "rca:download"},
+        )
+        assert all(item["job_id"] != job_id for item in client.get("/ui/jobs").json()["jobs"])
+        assert client.get(f"/ui/jobs/{job_id}").status_code == 404
+        assert client.get(f"/ui/jobs/{job_id}/runs/0/report.pdf").status_code == 404
+
+        api.app.dependency_overrides[auth_module.get_auth_context] = lambda: as_user(
+            "auditor",
+            {"rca:read", "rca:download", "rca:audit"},
+        )
+        assert client.get(f"/ui/jobs/{job_id}").status_code == 200
+        assert client.get(f"/ui/jobs/{job_id}/runs/0/report.pdf").status_code == 200
+    finally:
+        api.app.dependency_overrides.pop(auth_module.get_auth_context, None)
 
 
 def test_agent_construction_failure_does_not_hang_the_job(client):

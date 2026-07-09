@@ -45,8 +45,11 @@ MAX_RETAINED_JOBS = 40
 AgentFactory = Callable[[Settings], Any]
 
 
-def _actor_fields(payload: dict[str, Any]) -> dict[str, Any]:
-    actor = payload.get("_actor")
+class JobCapacityError(RuntimeError):
+    """Raised when the bounded web analysis worker pool is saturated."""
+
+
+def _actor_fields(actor: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(actor, dict):
         return {}
     keys = ("actor_subject", "actor_email", "actor_name", "actor_permissions")
@@ -87,9 +90,12 @@ class Job:
         *,
         settings: Settings,
         history: JobHistoryStore,
+        actor: dict[str, Any] | None = None,
     ) -> None:
         self.id = job_id
         self.payload = payload
+        self.actor = actor or {}
+        self.owner_subject = self.actor.get("actor_subject")
         self.settings = settings
         self.history = history
         self.created_at_ms = int(time() * 1000)
@@ -129,6 +135,10 @@ class JobManager:
     def __init__(self, agent_factory: AgentFactory | None = None) -> None:
         self._jobs: "OrderedDict[str, Job]" = OrderedDict()
         self._lock = threading.Lock()
+        self._capacity_lock = threading.Lock()
+        self._semaphore: threading.BoundedSemaphore | None = None
+        self._semaphore_size = 0
+        self._active_by_subject: dict[str, int] = {}
         self._agent_factory = agent_factory
 
     # Allow tests / the app to inject a provider-stubbed agent.
@@ -153,20 +163,88 @@ class JobManager:
                 self._jobs.popitem(last=False)
         job.history.record_job(job)
 
-    def start(self, payload: dict[str, Any], methods: list[str]) -> Job:
+    def _semaphore_for(self, settings: Settings) -> threading.BoundedSemaphore:
+        size = max(1, settings.web_max_concurrent_jobs)
+        with self._capacity_lock:
+            if self._semaphore is None or self._semaphore_size != size:
+                self._semaphore = threading.BoundedSemaphore(size)
+                self._semaphore_size = size
+            return self._semaphore
+
+    def _subject_key(self, actor: dict[str, Any] | None) -> str:
+        subject = actor.get("actor_subject") if isinstance(actor, dict) else None
+        return subject if isinstance(subject, str) and subject else "__anonymous__"
+
+    def _reserve_subject_slot(self, settings: Settings, actor: dict[str, Any] | None) -> str:
+        key = self._subject_key(actor)
+        limit = max(1, settings.web_max_concurrent_jobs_per_subject)
+        with self._capacity_lock:
+            active = self._active_by_subject.get(key, 0)
+            if active >= limit:
+                raise JobCapacityError("too many active analyses for this caller")
+            self._active_by_subject[key] = active + 1
+        return key
+
+    def _release_subject_slot(self, key: str) -> None:
+        with self._capacity_lock:
+            active = self._active_by_subject.get(key, 0)
+            if active <= 1:
+                self._active_by_subject.pop(key, None)
+            else:
+                self._active_by_subject[key] = active - 1
+
+    def start(
+        self,
+        payload: dict[str, Any],
+        methods: list[str],
+        *,
+        actor: dict[str, Any] | None = None,
+    ) -> Job:
         settings = get_settings()
         history = JobHistoryStore(settings)
-        job = Job(uuid.uuid4().hex[:12], payload, methods, settings=settings, history=history)
-        self._retain(job)
-        thread = threading.Thread(target=self._run_job, args=(job,), daemon=True)
+        semaphore = self._semaphore_for(settings)
+        if not semaphore.acquire(blocking=False):
+            raise JobCapacityError("too many active analyses")
+        subject_key = ""
+        try:
+            subject_key = self._reserve_subject_slot(settings, actor)
+            job = Job(
+                uuid.uuid4().hex[:12],
+                payload,
+                methods,
+                settings=settings,
+                history=history,
+                actor=actor,
+            )
+            self._retain(job)
+        except Exception:
+            if subject_key:
+                self._release_subject_slot(subject_key)
+            semaphore.release()
+            raise
+        thread = threading.Thread(
+            target=self._run_job_with_capacity_release,
+            args=(job, semaphore, subject_key),
+            daemon=True,
+        )
         thread.start()
         return job
 
-    def history(self, *, limit: int = 40) -> list[dict[str, Any]]:
-        return JobHistoryStore(get_settings()).list_jobs(limit=limit)
+    def history(
+        self,
+        *,
+        limit: int = 40,
+        owner_subject: str | None = None,
+        include_all: bool = False,
+    ) -> list[dict[str, Any]]:
+        return JobHistoryStore(get_settings()).list_jobs(
+            limit=limit,
+            owner_subject=owner_subject,
+            include_all=include_all,
+        )
 
-    def history_job(self, job_id: str) -> dict[str, Any] | None:
-        return JobHistoryStore(get_settings()).get_job(job_id)
+    def history_job(self, job_id: str, *, include_private: bool = True) -> dict[str, Any] | None:
+        return JobHistoryStore(get_settings()).get_job(job_id, include_private=include_private)
 
     def artifact_path(self, job_id: str, index: int, kind: str) -> Path | None:
         live = self.get(job_id)
@@ -180,6 +258,18 @@ class JobManager:
         return JobHistoryStore(get_settings()).artifact_path(job_id, index, kind)
 
     # -- the worker -------------------------------------------------------- #
+    def _run_job_with_capacity_release(
+        self,
+        job: Job,
+        semaphore: threading.BoundedSemaphore,
+        subject_key: str,
+    ) -> None:
+        try:
+            self._run_job(job)
+        finally:
+            self._release_subject_slot(subject_key)
+            semaphore.release()
+
     def _run_job(self, job: Job) -> None:
         # Belt and braces: whatever happens per-run, the job must always reach a
         # terminal state (emit "complete" + mark done) so the UI never hangs
@@ -347,7 +437,7 @@ class JobManager:
                 latency_seconds=report.latency_seconds,
                 sanitizer_findings=stats.get("sanitizer_findings"),
                 action="rca.run",
-                **_actor_fields(payload),
+                **_actor_fields(job.actor),
             )
 
             base = f"/ui/jobs/{job.id}/runs/{run.index}"
@@ -383,7 +473,7 @@ class JobManager:
                 sanitizer_findings=stats.get("sanitizer_findings"),
                 error_type=structured.error_type,
                 action="rca.run",
-                **_actor_fields(payload),
+                **_actor_fields(job.actor),
             )
             job.emit(
                 {

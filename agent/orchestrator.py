@@ -30,7 +30,7 @@ from memory import (
 from prompts import build_revise_messages
 from providers.base import RCAProvider
 from rca_agent import build_provider, generate_rca
-from sanitizer import sanitize_rca_input
+from sanitizer import sanitize_rca_input, sanitize_text
 from schemas import CritiqueResult, RCAGenerationReport, RCAInput, RCAReport
 from validation import validate_rca
 
@@ -165,11 +165,17 @@ class RCAAgent:
             )
             memory_matches = memory_search.matches
             if memory_search.evidence_pack:
+                memory_context = sanitize_text(
+                    memory_search.evidence_pack,
+                    self.settings.max_context_chars,
+                    field_name="past_rca_memory",
+                )
+                sanitizer_findings.extend(memory_context.findings)
                 rca_input = rca_input.model_copy(
                     update={
                         "context": append_memory_to_context(
                             rca_input.context,
-                            memory_search.evidence_pack,
+                            memory_context.text,
                         )
                     }
                 )

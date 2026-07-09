@@ -148,6 +148,72 @@ def test_api_validation_error_does_not_echo_raw_invalid_input(
     assert response.json()["error_type"] == "invalid_input"
 
 
+def test_api_rejects_chunked_body_over_size_limit(monkeypatch, tmp_path) -> None:
+    import api
+
+    settings = Settings(
+        output_dir=tmp_path,
+        max_request_body_bytes=32,
+        rate_limit_per_minute=0,
+    )
+    monkeypatch.setattr(api, "get_settings", lambda: settings)
+    client = TestClient(api.app)
+
+    def chunks():
+        yield b'{"problem_statement":"'
+        yield b"x" * 64
+        yield b'"}'
+
+    response = client.post(
+        "/rca",
+        content=chunks(),
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["error_type"] == "invalid_input"
+
+
+def test_rate_limit_key_uses_forwarded_for_only_from_trusted_proxy() -> None:
+    import api
+    from starlette.requests import Request
+
+    trusted_request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/rca",
+            "headers": [(b"x-forwarded-for", b"203.0.113.10, 10.0.0.5")],
+            "client": ("127.0.0.1", 12345),
+        }
+    )
+    real_ip_request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/rca",
+            "headers": [
+                (b"x-real-ip", b"198.51.100.9"),
+                (b"x-forwarded-for", b"203.0.113.10, 198.51.100.9"),
+            ],
+            "client": ("127.0.0.1", 12345),
+        }
+    )
+    untrusted_request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/rca",
+            "headers": [(b"x-forwarded-for", b"203.0.113.10")],
+            "client": ("198.51.100.44", 12345),
+        }
+    )
+
+    assert api._rate_limit_key(trusted_request, ("127.0.0.1",)) == "10.0.0.5"
+    assert api._rate_limit_key(real_ip_request, ("127.0.0.1",)) == "198.51.100.9"
+    assert api._rate_limit_key(untrusted_request, ("127.0.0.1",)) == "198.51.100.44"
+
+
 def test_cli_argument_error_is_structured_and_audited(
     monkeypatch,
     guarded_settings,

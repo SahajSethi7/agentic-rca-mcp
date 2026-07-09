@@ -3,6 +3,7 @@ import type { AnalyzeResponse, AuditHistoryResponse, JobHistoryResponse, ModelSt
 export type AccessTokenGetter = () => Promise<string | null>;
 
 let accessTokenGetter: AccessTokenGetter | null = null;
+const MAX_POLL_FAILURES = 8;
 
 export function setAccessTokenGetter(getter: AccessTokenGetter | null) {
   accessTokenGetter = getter;
@@ -110,17 +111,35 @@ export function subscribe(
   // polling resumes from the right cursor instead of replaying (and
   // double-appending) every event from the start.
   let delivered = 0;
+  let pollFailures = 0;
 
   const poll = (cursor: number) => {
     if (closed) return;
     authFetch(`/ui/status/${jobId}?cursor=${cursor}`)
-      .then((r) => r.json())
-      .then((d: { events?: SSEvent[]; cursor?: number; done?: boolean }) => {
+      .then((r) => {
+        if (!r.ok) {
+          ended = true;
+          onDone();
+          return null;
+        }
+        return r.json();
+      })
+      .then((d: { events?: SSEvent[]; cursor?: number; done?: boolean } | null) => {
+        if (!d || closed) return;
+        pollFailures = 0;
         (d.events || []).forEach(onEvent);
-        if (d.done) { onDone(); return; }
+        if (d.done) { ended = true; onDone(); return; }
         pollTimer = window.setTimeout(() => poll(d.cursor ?? cursor), 250);
       })
-      .catch(() => { pollTimer = window.setTimeout(() => poll(cursor), 600); });
+      .catch(() => {
+        pollFailures += 1;
+        if (pollFailures >= MAX_POLL_FAILURES) {
+          ended = true;
+          onDone();
+          return;
+        }
+        pollTimer = window.setTimeout(() => poll(cursor), 600);
+      });
   };
 
   if (accessTokenGetter) {

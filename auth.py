@@ -68,6 +68,12 @@ def _bearer_token(authorization: str | None) -> str:
             "Authorization header is expected.",
         )
     parts = authorization.split()
+    if not parts:
+        raise _auth_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "authorization_header_missing",
+            "Authorization header is expected.",
+        )
     if parts[0].lower() != "bearer":
         raise _auth_error(
             status.HTTP_401_UNAUTHORIZED,
@@ -127,7 +133,7 @@ def _decode_token(token: str, settings: Settings) -> dict[str, Any]:
         return jwt.decode(
             token,
             signing_key.key,
-            algorithms=list(settings.auth0_algorithms),
+            algorithms=["RS256"],
             audience=settings.auth0_audience,
             issuer=issuer,
         )

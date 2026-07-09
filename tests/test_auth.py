@@ -57,6 +57,14 @@ def test_permission_guard_rejects_missing_permission() -> None:
     assert exc.value.detail["error"] == "permission_denied"
 
 
+def test_whitespace_authorization_header_returns_401() -> None:
+    with pytest.raises(HTTPException) as exc:
+        auth_module._bearer_token("   ")
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail["error"] == "authorization_header_missing"
+
+
 def test_auth0_rs256_jwt_is_validated_through_mocked_jwks(monkeypatch) -> None:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public_key = private_key.public_key()
@@ -104,6 +112,31 @@ def test_auth0_rs256_jwt_is_validated_through_mocked_jwks(monkeypatch) -> None:
     assert context.email == "analyst@example.com"
     assert context.name == "Demo Analyst"
     assert context.permissions == frozenset({"rca:read", "rca:write", "rca:download"})
+
+
+def test_auth0_decode_pins_rs256_even_if_env_allows_more(monkeypatch) -> None:
+    settings = Settings(
+        auth_enabled=True,
+        auth0_domain="demo-tenant.us.auth0.com",
+        auth0_audience="https://rca-assistant.example/api",
+        auth0_algorithms=("HS256", "RS256"),
+    )
+    seen: dict[str, object] = {}
+
+    class FakeJwksClient:
+        def get_signing_key_from_jwt(self, raw_token: str):
+            return type("SigningKey", (), {"key": "public-key"})()
+
+    def fake_decode(token, key, *, algorithms, audience, issuer):
+        seen["algorithms"] = algorithms
+        return {"sub": "auth0|user-123", "aud": audience, "iss": issuer}
+
+    monkeypatch.setattr(auth_module, "_jwks_client", lambda jwks_url: FakeJwksClient())
+    monkeypatch.setattr(jwt, "decode", fake_decode)
+
+    auth_module._decode_token("token", settings)
+
+    assert seen["algorithms"] == ["RS256"]
 
 
 def test_auth0_jwt_rejects_wrong_audience_through_mocked_jwks(monkeypatch) -> None:
