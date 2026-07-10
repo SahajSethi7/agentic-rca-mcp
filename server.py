@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 from typing import Any
 
 from fastmcp import FastMCP
@@ -68,8 +69,11 @@ def run_rca_pipeline(
             system_area=system_area,
         )
 
-        output_dir = settings.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = enforce_output_path(
+            settings.output_dir / "runs" / uuid.uuid4().hex[:12],
+            settings,
+        )
+        output_dir.mkdir(parents=True, exist_ok=False)
 
         pdf_path = build_pdf(
             report,

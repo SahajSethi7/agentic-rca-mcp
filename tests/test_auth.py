@@ -65,6 +65,19 @@ def test_whitespace_authorization_header_returns_401() -> None:
     assert exc.value.detail["error"] == "authorization_header_missing"
 
 
+@pytest.mark.parametrize("subject", [None, "", "   "])
+def test_authenticated_context_requires_nonempty_subject(subject) -> None:
+    claims = {"permissions": ["rca:read"]}
+    if subject is not None:
+        claims["sub"] = subject
+
+    with pytest.raises(HTTPException) as exc:
+        auth_module._context_from_claims(claims)
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail["error"] == "invalid_token"
+
+
 def test_auth0_rs256_jwt_is_validated_through_mocked_jwks(monkeypatch) -> None:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public_key = private_key.public_key()

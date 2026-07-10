@@ -243,6 +243,64 @@ class JobHistoryStore:
         except Exception:
             logger.warning("Job completion history write failed; continuing.", exc_info=True)
 
+    def mark_interrupted_jobs(self) -> int:
+        """Move persisted nonterminal jobs to a replayable terminal error state.
+
+        Worker threads are process-local and cannot survive a backend restart.
+        Calling this once during application startup prevents polling clients
+        from waiting forever on jobs that can no longer make progress.
+        """
+        interrupted_at = now_ms()
+        try:
+            with self._connection() as conn:
+                jobs = conn.execute(
+                    "SELECT job_id FROM jobs WHERE done = 0"
+                ).fetchall()
+                for job_row in jobs:
+                    job_id = str(job_row["job_id"])
+                    runs = conn.execute(
+                        "SELECT run_index, method FROM runs WHERE job_id = ? AND done = 0",
+                        (job_id,),
+                    ).fetchall()
+                    for run in runs:
+                        error = {
+                            "status": "error",
+                            "error_type": "job_interrupted",
+                            "message": "Run interrupted before completion.",
+                            "detail": "The backend restarted before this run reached a terminal state.",
+                        }
+                        conn.execute(
+                            """
+                            UPDATE runs
+                            SET stage = 'error', error_json = ?, done = 1,
+                                updated_at_ms = ?, completed_at_ms = ?
+                            WHERE job_id = ? AND run_index = ?
+                            """,
+                            (_json(error), interrupted_at, interrupted_at, job_id, run["run_index"]),
+                        )
+                        event = {
+                            "type": "error",
+                            "run": run["run_index"],
+                            "method": run["method"],
+                            "error": error,
+                        }
+                        conn.execute(
+                            "INSERT INTO events(job_id, event_json, created_at_ms) VALUES (?, ?, ?)",
+                            (job_id, _json(event), interrupted_at),
+                        )
+                    conn.execute(
+                        "INSERT INTO events(job_id, event_json, created_at_ms) VALUES (?, ?, ?)",
+                        (job_id, _json({"type": "complete"}), interrupted_at),
+                    )
+                    conn.execute(
+                        "UPDATE jobs SET done = 1, updated_at_ms = ? WHERE job_id = ?",
+                        (interrupted_at, job_id),
+                    )
+                return len(jobs)
+        except Exception:
+            logger.warning("Interrupted job recovery failed; continuing.", exc_info=True)
+            return 0
+
     def record_audit(self, record: dict[str, Any]) -> None:
         try:
             with self._connection() as conn:

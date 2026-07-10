@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -100,6 +100,85 @@ class WhyEntry(BaseModel):
     )
 
 
+class FishboneDetail(BaseModel):
+    """Validated Fishbone payload emitted by the generation model."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    categories: dict[str, list[str]] = Field(min_length=2, max_length=5)
+    selected_category: str = Field(min_length=1)
+    selected_cause: str = Field(min_length=3)
+
+    @field_validator("categories")
+    @classmethod
+    def validate_categories(cls, categories: dict[str, list[str]]) -> dict[str, list[str]]:
+        if any(not name.strip() for name in categories):
+            raise ValueError("fishbone category names cannot be blank")
+        for causes in categories.values():
+            if len(causes) > 4 or any(not cause.strip() for cause in causes):
+                raise ValueError("fishbone categories allow at most four non-blank causes")
+        if sum(bool(causes) for causes in categories.values()) < 2:
+            raise ValueError("fishbone requires at least two non-empty categories")
+        return categories
+
+    @model_validator(mode="after")
+    def validate_selection(self) -> "FishboneDetail":
+        if self.selected_category not in self.categories:
+            raise ValueError("selected_category must match a fishbone category")
+        if self.selected_cause not in self.categories[self.selected_category]:
+            raise ValueError("selected_cause must be listed in selected_category")
+        return self
+
+
+class FaultTreeGate(BaseModel):
+    """One strictly bounded AND/OR gate in a simplified fault tree."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    type: Literal["AND", "OR"]
+    event: str = Field(min_length=3)
+    children: list[str] = Field(min_length=2, max_length=4)
+
+    @field_validator("children")
+    @classmethod
+    def reject_blank_children(cls, children: list[str]) -> list[str]:
+        if any(not child.strip() for child in children):
+            raise ValueError("fault-tree children cannot be blank")
+        return children
+
+
+class FaultTreeDetail(BaseModel):
+    """Validated simplified fault-tree payload."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    top_event: str = Field(min_length=3)
+    gates: list[FaultTreeGate] = Field(min_length=1, max_length=3)
+    basic_causes: list[str] = Field(min_length=2, max_length=5)
+
+    @field_validator("basic_causes")
+    @classmethod
+    def reject_blank_causes(cls, causes: list[str]) -> list[str]:
+        if any(not cause.strip() for cause in causes):
+            raise ValueError("fault-tree basic causes cannot be blank")
+        return causes
+
+
+class MethodDetail(BaseModel):
+    """Typed method-specific payload; at most one alternate method is present."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fishbone: FishboneDetail | None = None
+    fault_tree: FaultTreeDetail | None = None
+
+    @model_validator(mode="after")
+    def reject_multiple_methods(self) -> "MethodDetail":
+        if self.fishbone is not None and self.fault_tree is not None:
+            raise ValueError("method_detail cannot contain both fishbone and fault_tree")
+        return self
+
+
 class RCAReport(BaseModel):
     """Full structured RCA output produced by an RCA provider."""
 
@@ -145,7 +224,7 @@ class RCAReport(BaseModel):
         default_factory=list,
         description="Critique or validation observations from the agent loop or validation model.",
     )
-    method_detail: dict[str, Any] | None = Field(
+    method_detail: MethodDetail | None = Field(
         default=None,
         description="Method-specific payload for Fishbone, Fault Tree, or future RCA methods.",
     )
@@ -227,7 +306,7 @@ class RCAGenerationReport(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     evidence_needed: list[str] = Field(default_factory=list)
     validation_notes: list[str] = Field(default_factory=list)
-    method_detail: dict[str, Any] | None = Field(default=None)
+    method_detail: MethodDetail | None = Field(default=None)
     confidence: Literal["low", "medium", "high"] = Field(
         description="Confidence level based on the available evidence.",
     )
@@ -294,6 +373,7 @@ class StructuredError(BaseModel):
         "model_output_invalid",
         "write_denied",
         "rate_limited",
+        "job_interrupted",
         "internal_error",
     ] = Field(description="Stable, machine-readable failure category.")
     message: str = Field(

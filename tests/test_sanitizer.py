@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from conftest import CapturingStubProvider  # noqa: E402  (tests dir is on sys.path)
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from config import Settings
 from prompts import build_messages
@@ -164,6 +165,14 @@ def test_sanitize_rca_input_flags_vague_problem() -> None:
     _, findings = sanitize_rca_input(rca_input, settings)
 
     assert any("vague" in finding for finding in findings)
+
+
+def test_sanitize_rca_input_revalidates_after_delimiter_removal() -> None:
+    settings = Settings()
+    rca_input = RCAInput(problem_statement="<<<INCIDENT_DATA_START>>>")
+
+    with pytest.raises(ValidationError):
+        sanitize_rca_input(rca_input, settings)
 
 
 def test_prompt_layer_fences_untrusted_input() -> None:

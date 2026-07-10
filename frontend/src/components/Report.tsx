@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { downloadArtifact, openArtifact, type AnalyzePayload } from "../api";
+import type { AnalyzePayload } from "../api";
 import type { FishboneDetail, KnownIssueMatch, RCAReport, RunUrls } from "../types";
 import { METHOD_SHORT } from "../types";
 import { CheckIcon } from "./icons";
 import MermaidTree from "./MermaidTree";
+import Button from "./ui/Button";
+import ExportTile from "./ui/ExportTile";
 
 function titleCase(value: string | null | undefined) {
   if (!value) return "Not set";
@@ -27,9 +29,9 @@ function Section({
     <section id={id} className="scroll-mt-24 rounded-lg border border-slate-200 bg-white shadow-card">
       <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3">
         {number != null && (
-          <span className="grid h-7 w-7 place-items-center rounded-md bg-primary-hover text-body-sm font-extrabold text-white">{number}</span>
+          <span className="grid h-7 w-7 place-items-center rounded-md bg-primary-hover text-body-sm font-bold text-white">{number}</span>
         )}
-        <h2 className="min-w-0 flex-1 text-lead font-extrabold text-ink">{title}</h2>
+        <h2 className="min-w-0 flex-1 text-lead font-bold text-ink">{title}</h2>
         {action}
       </div>
       <div className="p-4">{children}</div>
@@ -47,7 +49,7 @@ function SimpleList({ items, variant = "dot" }: { items: string[]; variant?: "do
       {items.map((item, index) => (
         <li key={`${item}-${index}`} className="flex gap-2.5 text-body-sm leading-5 text-ink-soft">
           {variant === "num" ? (
-            <span className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-md bg-primary-tint text-caption font-extrabold text-primary-selected">{index + 1}</span>
+            <span className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-md bg-primary-tint text-caption font-bold text-primary-selected">{index + 1}</span>
           ) : variant === "check" ? (
             <span className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-md bg-primary-tint text-primary-selected"><CheckIcon className="h-3.5 w-3.5" /></span>
           ) : (
@@ -71,8 +73,8 @@ function ConfidenceVerdict({ confidence }: { confidence: string }) {
   return (
     <div className="rounded-lg border border-primary-soft bg-primary-tint px-4 py-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-caption font-extrabold uppercase tracking-[0.12em] text-primary-selected">Model confidence verdict</p>
-        <p className="text-body-sm font-extrabold capitalize text-ink">{confidence}</p>
+        <p className="text-caption font-bold uppercase tracking-[0.12em] text-primary-selected">Model confidence verdict</p>
+        <p className="text-body-sm font-bold capitalize text-ink">{confidence}</p>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-1.5" aria-label={`${confidence} confidence`}>
         {[1, 2, 3].map((segment) => (
@@ -98,7 +100,7 @@ function ReportToc({
 }) {
   return (
     <nav className="rounded-lg border border-slate-200 bg-white p-4 shadow-card" aria-label="Report contents">
-      <h2 className="text-lead font-extrabold text-ink">Report Contents</h2>
+      <h2 className="text-lead font-bold text-ink">Report Contents</h2>
       <ol className="mt-3 space-y-1">
         {items.map((item) => {
           const active = item.id === activeId;
@@ -114,7 +116,7 @@ function ReportToc({
                     : "border-transparent text-ink-soft hover:bg-primary-tint hover:text-primary-selected"
                 }`}
               >
-                <span className={`grid h-5 w-5 flex-shrink-0 place-items-center rounded-md text-caption font-extrabold ${
+                <span className={`grid h-5 w-5 flex-shrink-0 place-items-center rounded-md text-caption font-bold ${
                   active ? "bg-primary-selected text-white" : "bg-primary-tint text-primary-selected"
                 }`}>
                   {item.number}
@@ -140,8 +142,8 @@ function FishboneVisual({ detail, rootCause }: { detail: FishboneDetail; rootCau
             return (
               <div key={category} className={`rounded-lg border bg-white px-3 py-3 ${selected ? "border-primary ring-2 ring-primary-soft" : "border-slate-200"}`}>
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-body-sm font-extrabold text-ink">{category}</p>
-                  {selected && <span className="rounded-md bg-primary-tint px-2 py-1 text-caption font-extrabold text-primary-selected">Selected</span>}
+                  <p className="text-body-sm font-bold text-ink">{category}</p>
+                  {selected && <span className="rounded-md bg-primary-tint px-2 py-1 text-caption font-bold text-primary-selected">Selected</span>}
                 </div>
                 <ul className="mt-2 space-y-1.5">
                   {(Array.isArray(causes) ? causes : [causes]).map((cause, index) => (
@@ -157,8 +159,8 @@ function FishboneVisual({ detail, rootCause }: { detail: FishboneDetail; rootCau
         </div>
         <div className="flex items-center">
           <div className="w-full rounded-lg bg-command px-4 py-4 text-white shadow-card">
-            <p className="text-caption font-extrabold uppercase tracking-[0.12em] text-white/70">Effect</p>
-            <p className="mt-2 break-words text-body font-extrabold leading-5">{rootCause}</p>
+            <p className="text-caption font-bold uppercase tracking-[0.12em] text-white/70">Effect</p>
+            <p className="mt-2 break-words text-body font-bold leading-5">{rootCause}</p>
           </div>
         </div>
       </div>
@@ -199,7 +201,7 @@ function MemoryMatchCard({ match, featured = false }: { match: KnownIssueMatch; 
   return (
     <div className={`rounded-lg border px-4 py-3 ${featured ? "border-primary-soft bg-primary-tint" : "border-slate-200 bg-white"}`}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-md bg-primary-selected px-2 py-1 font-mono text-caption font-extrabold text-white">{match.incident_id}</span>
+        <span className="rounded-md bg-primary-selected px-2 py-1 font-mono text-caption font-bold text-white">{match.incident_id}</span>
         {match.service_name && <span className="rounded-md bg-white px-2 py-1 text-caption font-bold text-ink-muted ring-1 ring-primary-soft">{match.service_name}</span>}
         {match.confidence && <span className="rounded-md bg-white px-2 py-1 text-caption font-bold capitalize text-primary-selected ring-1 ring-primary-soft">{match.confidence}</span>}
         {match.retrieval_mode && <span className="rounded-md bg-white px-2 py-1 text-caption font-bold capitalize text-primary-selected ring-1 ring-primary-soft">{match.retrieval_mode}</span>}
@@ -207,12 +209,12 @@ function MemoryMatchCard({ match, featured = false }: { match: KnownIssueMatch; 
       <div className="mt-3">
         <SimilarityBar score={match.similarity_score} />
       </div>
-      <p className="mt-3 text-ui font-extrabold uppercase tracking-[0.1em] text-primary-selected">Known root cause</p>
+      <p className="mt-3 text-ui font-bold uppercase tracking-[0.1em] text-primary-selected">Known root cause</p>
       <p className="mt-1 break-words text-body font-semibold leading-5 text-ink">{match.root_cause}</p>
       <p className={`mt-2 break-words text-ui leading-5 ${featured ? "text-ink" : "text-ink-muted"}`}>{match.match_reason}</p>
       {match.graph_path?.length ? (
         <div className="mt-3 rounded-md border border-primary-soft bg-white/80 px-3 py-2">
-          <p className="text-caption font-extrabold uppercase tracking-[0.12em] text-primary-selected">Graph evidence</p>
+          <p className="text-caption font-bold uppercase tracking-[0.12em] text-primary-selected">Graph evidence</p>
           <div className="mt-1 space-y-1">
             {match.graph_path.slice(0, 3).map((path) => (
               <p key={path} className="break-words font-mono text-caption leading-5 text-ink-muted">{path}</p>
@@ -248,54 +250,6 @@ function KnownIssueMemory({ matches }: { matches: KnownIssueMatch[] }) {
         </p>
       )}
     </div>
-  );
-}
-
-function ExportLink({
-  href,
-  label,
-  detail,
-  download,
-  filename,
-}: {
-  href?: string;
-  label: string;
-  detail: string;
-  download?: boolean;
-  filename?: string;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  if (!href) {
-    return (
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 opacity-70">
-        <p className="text-body-sm font-extrabold text-ink">{label}</p>
-        <p className="mt-1 text-ui text-ink-muted">{detail}</p>
-      </div>
-    );
-  }
-  return (
-    <button
-      type="button"
-      disabled={busy}
-      onClick={async () => {
-        setBusy(true);
-        setError(null);
-        try {
-          if (download) await downloadArtifact(href, filename || label);
-          else await openArtifact(href);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : String(err));
-        } finally {
-          setBusy(false);
-        }
-      }}
-      className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-primary-soft hover:bg-primary-tint disabled:cursor-wait disabled:opacity-70"
-    >
-      <p className="text-body-sm font-extrabold text-ink">{label}</p>
-      <p className="mt-1 text-ui text-ink-muted">{busy ? "Preparing..." : detail}</p>
-      {error && <p className="mt-2 text-ui font-bold text-danger-700">{error}</p>}
-    </button>
   );
 }
 
@@ -416,14 +370,14 @@ export default function Report({
   ];
 
   return (
-    <article className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
+    <article className="grid gap-5 xl:grid-cols-[minmax(0,880px)_330px]">
       <div className="min-w-0 space-y-5">
         <header className="rounded-lg border border-slate-200 bg-white px-5 py-5 shadow-card sm:px-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-caption font-extrabold uppercase tracking-[0.14em] text-primary-selected">RCA Report</p>
-                <span className="rounded-md bg-primary-tint px-2 py-1 text-caption font-extrabold capitalize text-primary-selected">{report.confidence} confidence</span>
+                <p className="text-caption font-bold uppercase tracking-[0.14em] text-primary-selected">RCA Report</p>
+                <span className="rounded-md bg-primary-tint px-2 py-1 text-caption font-bold capitalize text-primary-selected">{report.confidence} confidence</span>
               </div>
               <h1 className="mt-2 max-w-[900px] break-words text-display font-extrabold leading-tight tracking-tight text-ink">
                 {report.problem || payload?.problem_statement || "Root cause analysis report"}
@@ -431,14 +385,14 @@ export default function Report({
             </div>
             <div className="report-print-hide flex flex-wrap gap-2">
               {onBack && (
-                <button type="button" onClick={onBack} className="h-10 rounded-md border border-slate-300 bg-white px-3 text-body-sm font-bold text-ink-soft hover:border-primary-soft hover:text-primary-selected">
+                <Button variant="secondary" onClick={onBack}>
                   Back
-                </button>
+                </Button>
               )}
               {onRunAgain && (
-                <button type="button" onClick={onRunAgain} className="h-10 rounded-md bg-primary px-3 text-body-sm font-extrabold text-white hover:bg-primary-hover">
+                <Button onClick={onRunAgain}>
                   Run Another Analysis
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -447,7 +401,7 @@ export default function Report({
               <div key={label} className={`flex min-w-0 items-center gap-1.5 pr-3 ${index === 0 ? "" : "border-l border-slate-200 pl-3"}`}>
                 <span className="font-bold uppercase tracking-[0.1em] text-ink-muted">{label}</span>
                 <span className="text-slate-300">{"\u00b7"}</span>
-                <span className="min-w-0 break-words font-extrabold text-ink">{value}</span>
+                <span className="min-w-0 break-words font-semibold text-ink">{value}</span>
               </div>
             ))}
           </div>
@@ -463,8 +417,8 @@ export default function Report({
           </Section>
           <Section id="report-root-cause" number={3} title="Root Cause">
             <div className="rounded-lg border border-primary-soft bg-primary-tint px-4 py-3">
-              <p className="text-caption font-extrabold uppercase tracking-[0.12em] text-primary-selected">Identified cause</p>
-              <p className="mt-1 break-words text-lead font-extrabold leading-6 text-ink">{report.root_cause}</p>
+              <p className="text-caption font-bold uppercase tracking-[0.12em] text-primary-selected">Identified cause</p>
+              <p className="mt-1 break-words text-lead font-bold leading-6 text-ink">{report.root_cause}</p>
             </div>
           </Section>
         </div>
@@ -510,20 +464,23 @@ export default function Report({
 
       <aside className="report-rail space-y-5 xl:sticky xl:top-[84px] xl:self-start">
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-card">
-          <h2 className="text-lead font-extrabold text-ink">Export & Open</h2>
+          <h2 className="text-lead font-bold text-ink">Export & Open</h2>
           <div className="mt-4 space-y-2">
-            <ExportLink href={urls?.pdf_url} label="Download PDF" detail="Printable RCA report" download filename="RCA_Assistant.pdf" />
-            <ExportLink href={urls?.html_url} label="Open HTML Report" detail="Human-readable local report" />
-            <ExportLink href={urls?.memory_xlsx_url} label="Download Matching Past RCAs" detail="Excel workbook of retrieved past RCA matches" download filename="RCA_Assistant_Matching_Past_RCAs.xlsx" />
+            <ExportTile href={urls?.pdf_url} label="Download PDF" detail="Printable RCA report" download filename="RCA_Assistant.pdf" />
+            <ExportTile href={urls?.html_url} label="Open HTML Report" detail="Human-readable local report" />
+            <ExportTile href={urls?.memory_xlsx_url} label="Download Matching Past RCAs" detail="Excel workbook of retrieved past RCA matches" download filename="RCA_Assistant_Matching_Past_RCAs.xlsx" />
           </div>
         </section>
 
-        <ReportToc items={tocItems} activeId={activeSection} onSelect={scrollToSection} />
+        {/* Scroll-tracking ToC is only useful when the rail sits beside the report. */}
+        <div className="hidden xl:block">
+          <ReportToc items={tocItems} activeId={activeSection} onSelect={scrollToSection} />
+        </div>
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-card">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lead font-extrabold text-ink">Quality Checks</h2>
-            <span className="rounded-md bg-primary-tint px-2 py-1 text-caption font-extrabold text-primary-selected">
+            <h2 className="text-lead font-bold text-ink">Quality Checks</h2>
+            <span className="rounded-md bg-primary-tint px-2 py-1 text-caption font-bold text-primary-selected">
               {qualityChecks.filter(([, ok]) => ok).length}/{qualityChecks.length} passed
             </span>
           </div>
@@ -531,7 +488,7 @@ export default function Report({
             {qualityChecks.map(([label, ok]) => (
               <div key={label as string} className="flex items-center justify-between gap-3 text-ui">
                 <span className="font-bold text-ink-soft">{label}</span>
-                <span className={`rounded-md px-2 py-1 text-caption font-extrabold ${ok ? "bg-primary-tint text-primary-selected" : "bg-warn-50 text-warn-700"}`}>
+                <span className={`rounded-md px-2 py-1 text-caption font-bold ${ok ? "bg-primary-tint text-primary-selected" : "bg-warn-50 text-warn-700"}`}>
                   {ok ? "Passed" : "Review"}
                 </span>
               </div>

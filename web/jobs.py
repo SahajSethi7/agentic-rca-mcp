@@ -145,6 +145,9 @@ class JobManager:
     def set_agent_factory(self, factory: AgentFactory | None) -> None:
         self._agent_factory = factory
 
+    def recover_interrupted_history(self) -> int:
+        return JobHistoryStore(get_settings()).mark_interrupted_jobs()
+
     def _build_agent(self, settings: Settings) -> Any:
         if self._agent_factory is not None:
             return self._agent_factory(settings)

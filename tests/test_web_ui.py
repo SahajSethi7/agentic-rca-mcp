@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -171,6 +172,77 @@ def test_model_status_endpoint_reports_readiness(client, monkeypatch):
     assert status["writer"]["configured_model"] == "demo-writer:1b"
     assert status["validator"]["reachable"] is True
     assert status["memory"]["record_count"] == 12
+
+
+def test_model_selection_status_omits_operational_paths(client, monkeypatch):
+    monkeypatch.setattr(
+        routes,
+        "get_model_status",
+        lambda settings: {
+            "checked_at": "2026-07-06T00:00:00+00:00",
+            "writer": {
+                "role": "writer",
+                "configured_model": "demo-writer:1b",
+                "endpoint": "http://internal-model:11434/v1/models",
+                "reachable": True,
+                "available": True,
+                "allowed_models": [{"model": "demo-writer:1b", "available": True}],
+            },
+            "validator": {
+                "enabled": True,
+                "configured_model": "demo-validator:2b",
+                "endpoint": "http://internal-validator/v1/models",
+                "reachable": True,
+                "available": True,
+                "allowed_models": [],
+            },
+            "memory": {"path": "C:/secret/memory.xlsx"},
+            "output_storage": {"path": "C:/secret/outputs"},
+        },
+    )
+
+    body = client.get("/ui/model-selection-status").json()
+
+    assert body["writer"]["configured_model"] == "demo-writer:1b"
+    assert "endpoint" not in body["writer"]
+    assert "memory" not in body
+    assert "output_storage" not in body
+
+
+def test_operational_diagnostics_require_admin_and_meta_hides_memory_path(client, monkeypatch):
+    monkeypatch.setattr(
+        routes,
+        "get_model_status",
+        lambda settings: {
+            "checked_at": "2026-07-06T00:00:00+00:00",
+            "overall": {"ready": True, "warnings": []},
+            "writer": {"configured_model": "writer", "allowed_models": []},
+            "validator": {"configured_model": "validator", "allowed_models": []},
+            "memory": {"path": "C:/secret/memory.xlsx"},
+        },
+    )
+
+    def caller(permissions: set[str]) -> AuthContext:
+        return AuthContext(
+            enabled=True,
+            authenticated=True,
+            subject="auth0|reader",
+            permissions=frozenset(permissions),
+        )
+
+    api.app.dependency_overrides[auth_module.get_auth_context] = lambda: caller({"rca:read"})
+    try:
+        meta = client.get("/ui/meta")
+        assert meta.status_code == 200
+        assert "path" not in meta.json()["memory"]
+        assert client.get("/ui/model-selection-status").status_code == 200
+        assert client.get("/ui/model-status").status_code == 403
+
+        api.app.dependency_overrides[auth_module.get_auth_context] = lambda: caller({"rca:admin"})
+        assert client.get("/ui/model-status").status_code == 200
+        assert "path" in client.get("/ui/meta").json()["memory"]
+    finally:
+        api.app.dependency_overrides.pop(auth_module.get_auth_context, None)
 
 
 def test_allowed_writer_models_do_not_implicitly_include_configured_model():
@@ -420,6 +492,53 @@ def test_job_history_metrics_categorize_failures(client, monkeypatch, tmp_path):
     metrics = JobHistoryStore(settings).metrics()
     assert metrics["failed_runs"] == 1
     assert metrics["failed_by_type"] == {"provider_unreachable": 1}
+
+
+def test_startup_recovery_marks_persisted_jobs_interrupted(tmp_path):
+    from web.history import JobHistoryStore
+
+    settings = Settings(
+        output_dir=tmp_path,
+        job_history_path=tmp_path / "history.sqlite",
+    )
+    store = JobHistoryStore(settings)
+    created = int(time.time() * 1000) - 1000
+    run = SimpleNamespace(
+        index=0,
+        method="five_why",
+        stage="generating",
+        round=None,
+        error=None,
+        report_json=None,
+        report_summary=None,
+        pdf_path=None,
+        html_path=None,
+        json_path=None,
+        memory_matches_path=None,
+        generation_model="test-model",
+        done=False,
+        created_at_ms=created,
+        updated_at_ms=created,
+        completed_at_ms=None,
+    )
+    job = SimpleNamespace(
+        id="interrupted-job",
+        payload={"problem_statement": "A persisted incident that never completed", "method": "five_why"},
+        actor={},
+        done=False,
+        created_at_ms=created,
+        runs=[run],
+    )
+    store.record_job(job)
+
+    assert store.mark_interrupted_jobs() == 1
+    assert store.mark_interrupted_jobs() == 0
+    restored = store.get_job("interrupted-job")
+    assert restored is not None
+    assert restored["done"] is True
+    assert restored["runs"][0]["done"] is True
+    assert restored["runs"][0]["error"]["error_type"] == "job_interrupted"
+    assert [event["type"] for event in restored["events"][-2:]] == ["error", "complete"]
 
 
 def test_compare_two_methods_runs_both(client):

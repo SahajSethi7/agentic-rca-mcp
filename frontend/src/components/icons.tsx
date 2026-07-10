@@ -92,6 +92,14 @@ export function DownloadIcon({ className }: IconProps) {
   );
 }
 
+export function ChevronDownIcon({ className }: IconProps) {
+  return (
+    <StrokeIcon className={className}>
+      <path d="m6 9 6 6 6-6" />
+    </StrokeIcon>
+  );
+}
+
 export function SettingsIcon({ className }: IconProps) {
   return (
     <StrokeIcon className={className}>

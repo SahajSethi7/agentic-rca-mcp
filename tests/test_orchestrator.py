@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from conftest import CapturingStubProvider
 from openpyxl import load_workbook
 
 from agent.orchestrator import RCAAgent
 from config import Settings
+from memory import MemorySearch
 from providers.base import RCAProvider
 from schemas import RCAInput, RCAReport
 
@@ -46,7 +48,7 @@ def report_payload(root_cause: str, selected_cause: str) -> dict[str, Any]:
         "method_detail": {
             "fishbone": {
                 "categories": {
-                    "People": [],
+                    "People": ["Migration review ownership was unclear."],
                     "Process": [selected_cause],
                     "Tooling": [],
                     "Environment": [],
@@ -126,7 +128,9 @@ def test_agent_revises_method_consistency_findings() -> None:
     )
 
     assert provider.revise_calls == 1
-    assert report.root_cause == report.method_detail["fishbone"]["selected_cause"]
+    assert report.method_detail is not None
+    assert report.method_detail.fishbone is not None
+    assert report.root_cause == report.method_detail.fishbone.selected_cause
     assert any("method_consistency" in note for note in report.validation_notes)
 
 
@@ -166,3 +170,36 @@ def test_agent_appends_completed_run_to_memory_workbook(tmp_path) -> None:
     assert "method:fishbone" in values["tags"]
     assert any("added this RCA to past RCA memory" in note for note in report.validation_notes)
     assert agent.last_run_stats["memory_writeback"]["row_number"] == 2
+
+
+def test_memory_evidence_respects_total_context_budget(monkeypatch, tmp_path) -> None:
+    provider = CapturingStubProvider()
+    settings = Settings(
+        validation_enabled=False,
+        max_revise_rounds=0,
+        memory_enabled=True,
+        memory_writeback_enabled=False,
+        memory_path=tmp_path / "unused.xlsx",
+        max_context_chars=120,
+    )
+    monkeypatch.setattr(
+        "agent.orchestrator.search_past_rca_memory",
+        lambda *args, **kwargs: MemorySearch(
+            matches=[],
+            evidence_pack="past evidence " * 100,
+            retrieval_mode="lexical",
+        ),
+    )
+    agent = RCAAgent(settings=settings, provider=provider)
+
+    agent.run(
+        "Checkout requests fail after a database deployment.",
+        context="x" * 90,
+    )
+
+    assert provider.seen_inputs
+    assert len(provider.seen_inputs[0].context or "") <= settings.max_context_chars
+    assert any(
+        "truncated past_rca_memory" in finding
+        for finding in agent.last_run_stats["sanitizer_findings"]
+    )

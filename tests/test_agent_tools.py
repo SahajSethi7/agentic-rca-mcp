@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from agent.tools import check_method_consistency, check_root_cause_specificity, run_all_checks
 from schemas import RCAReport
 
@@ -46,7 +49,7 @@ def test_method_consistency_accepts_matching_fishbone_root_cause() -> None:
     payload["method_detail"] = {
         "fishbone": {
             "categories": {
-                "People": [],
+                "People": ["Release ownership was unclear."],
                 "Process": [
                     "The migration release path lacked a performance validation gate."
                 ],
@@ -80,7 +83,7 @@ def test_method_consistency_flags_fishbone_root_cause_mismatch() -> None:
     payload["method_detail"] = {
         "fishbone": {
             "categories": {
-                "People": [],
+                "People": ["Release ownership was unclear."],
                 "Process": ["No schema review checklist."],
                 "Tooling": [],
                 "Environment": [],
@@ -107,18 +110,18 @@ def test_method_consistency_flags_fault_tree_shape_limits() -> None:
             "basic_causes": ["Only one cause"],
         }
     }
-    report = RCAReport.model_validate(payload)
-
-    issues = check_method_consistency(report)
-
-    assert [issue.severity for issue in issues] == ["medium", "medium"]
+    with pytest.raises(ValidationError):
+        RCAReport.model_validate(payload)
 
 
 def test_run_all_checks_includes_method_consistency() -> None:
     payload = report_payload(method="fishbone")
     payload["method_detail"] = {
         "fishbone": {
-            "categories": {"Process": ["No schema review checklist."]},
+            "categories": {
+                "Process": ["No schema review checklist."],
+                "Tooling": ["No migration plan diff was generated."],
+            },
             "selected_category": "Process",
             "selected_cause": "No schema review checklist.",
         }

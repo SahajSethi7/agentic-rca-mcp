@@ -1,5 +1,6 @@
 import type { UiMeta } from "../types";
 import { AUTH_PERMISSIONS, useAppAuth } from "../auth";
+import Button from "./ui/Button";
 
 function Icon({ name }: { name: "audit" | "settings" }) {
   if (name === "audit") {
@@ -33,9 +34,9 @@ function StatusBadge({ label, value, tone = "blue" }: { label: string; value: st
   }[tone];
 
   return (
-    <div className={`hidden min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-ui font-bold md:flex ${toneClass}`}>
-      <span className="text-micro font-extrabold uppercase tracking-[0.12em] opacity-70">{label}</span>
-      <span className="max-w-[190px] truncate font-mono text-ui">{value}</span>
+    <div className={`hidden min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-ui font-semibold md:flex ${toneClass}`}>
+      <span className="text-micro font-bold uppercase tracking-[0.12em] opacity-70">{label}</span>
+      <span className="max-w-[190px] truncate font-mono text-ui" title={value}>{value}</span>
     </div>
   );
 }
@@ -58,7 +59,7 @@ export default function TopBar({
     <header className="app-topbar sticky top-0 z-30 border-b border-primary-soft bg-white/90 backdrop-blur">
       <div className="flex min-h-[64px] items-center gap-3 px-4 sm:px-6">
         <div className="min-w-0 md:hidden">
-          <p className="truncate text-body-sm font-extrabold text-ink">RCA Assistant</p>
+          <p className="truncate text-body-sm font-bold text-ink">RCA Assistant</p>
           <p className="truncate text-caption text-ink-muted">Local Workspace</p>
         </div>
         <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
@@ -67,39 +68,32 @@ export default function TopBar({
         </div>
         <div className="flex flex-1 items-center justify-end gap-2">
           {auth.enabled && (
-            <div className="hidden max-w-[220px] truncate rounded-md border border-primary-soft bg-primary-tint px-3 py-2 text-ui font-extrabold text-primary-selected sm:block">
+            <div className="hidden max-w-[220px] truncate rounded-md border border-primary-soft bg-primary-tint px-3 py-2 text-ui font-bold text-primary-selected sm:block" title={userLabel}>
               {userLabel}
             </div>
           )}
           {canAudit && (
-            <button
-              type="button"
-              onClick={onAuditLogs}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-ui font-bold text-ink-soft transition hover:border-primary-soft hover:text-primary-selected"
-            >
+            <Button size="sm" variant="secondary" onClick={onAuditLogs}>
               <Icon name="audit" />
               Audit Logs
-            </button>
+            </Button>
           )}
           {canAdmin && (
-            <button
-              type="button"
+            <Button
+              size="sm"
+              variant="secondary"
               onClick={onSettings}
               aria-label="Open settings"
               title="Settings"
-              className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-lead font-extrabold text-ink-soft transition hover:border-primary-soft hover:text-primary-selected"
+              className="w-9 px-0"
             >
               <Icon name="settings" />
-            </button>
+            </Button>
           )}
           {auth.enabled && (
-            <button
-              type="button"
-              onClick={auth.logout}
-              className="h-9 rounded-md border border-slate-200 bg-white px-3 text-ui font-bold text-ink-soft transition hover:border-primary-soft hover:text-primary-selected"
-            >
+            <Button size="sm" variant="secondary" onClick={auth.logout}>
               Sign out
-            </button>
+            </Button>
           )}
         </div>
       </div>

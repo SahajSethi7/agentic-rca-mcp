@@ -43,8 +43,8 @@ class FishboneMethod(RCAMethod):
         )
 
     def parse(self, report: RCAReport) -> RCAReport:
-        detail = (report.method_detail or {}).get("fishbone")
-        if not isinstance(detail, dict) or not isinstance(detail.get("categories"), dict):
+        detail = report.method_detail.fishbone if report.method_detail else None
+        if detail is None:
             return report.model_copy(
                 update={
                     "validation_notes": [

@@ -8,6 +8,7 @@ never a crash, never a stack trace, never a write outside OUTPUT_DIR.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import openai
@@ -422,7 +423,8 @@ def test_injection_attempt_still_yields_a_normal_rca_and_pdf(
     )
 
     assert result["root_cause"]
-    assert (guarded_settings.output_dir / "Agentic_RCA.pdf").exists()
+    assert Path(result["pdf_path"]).exists()
+    assert Path(result["pdf_path"]).is_relative_to(guarded_settings.output_dir / "runs")
     records = read_audit_records(guarded_settings)
     assert any(
         "prompt-injection" in finding

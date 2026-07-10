@@ -171,10 +171,17 @@ def _permissions_from_claims(claims: dict[str, Any]) -> frozenset[str]:
 
 
 def _context_from_claims(claims: dict[str, Any]) -> AuthContext:
+    subject = claims.get("sub")
+    if not isinstance(subject, str) or not subject.strip():
+        raise _auth_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "invalid_token",
+            "Access token is missing the required subject claim.",
+        )
     return AuthContext(
         enabled=True,
         authenticated=True,
-        subject=claims.get("sub") if isinstance(claims.get("sub"), str) else None,
+        subject=subject,
         email=claims.get("email") if isinstance(claims.get("email"), str) else None,
         name=claims.get("name") if isinstance(claims.get("name"), str) else None,
         permissions=_permissions_from_claims(claims),

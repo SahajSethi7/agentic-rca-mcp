@@ -68,13 +68,14 @@ def _methods_for(req: AnalyzeRequest) -> list[str]:
 def meta(auth: AuthContext = Depends(require_permission("rca:read"))) -> dict:
     """Metadata the front-end uses to build selectors and honest status copy."""
     settings = get_settings()
-    memory = {
+    memory: dict[str, object] = {
         "enabled": settings.memory_enabled,
         "writeback_enabled": settings.memory_writeback_enabled,
-        "path": str(settings.memory_path),
         "record_count": None,
         "warning": None,
     }
+    if not auth.enabled or auth.has_permission("rca:admin", settings):
+        memory["path"] = str(settings.memory_path)
     if settings.memory_enabled:
         try:
             memory["record_count"] = get_past_rca_memory_count(settings.memory_path)
@@ -108,10 +109,39 @@ def meta(auth: AuthContext = Depends(require_permission("rca:read"))) -> dict:
 
 
 @router.get("/ui/model-status")
-def model_status(auth: AuthContext = Depends(require_permission("rca:read"))) -> dict:
+def model_status(auth: AuthContext = Depends(require_permission("rca:admin"))) -> dict:
     """Live readiness check for model endpoints, configured models, and memory."""
     _ = auth
     return get_model_status(get_settings())
+
+
+@router.get("/ui/model-selection-status")
+def model_selection_status(
+    auth: AuthContext = Depends(require_permission("rca:read")),
+) -> dict:
+    """Expose model availability needed by the form without operational paths."""
+    _ = auth
+    status = get_model_status(get_settings())
+
+    def public_probe(probe: dict) -> dict:
+        return {
+            key: probe.get(key)
+            for key in (
+                "role",
+                "configured_model",
+                "reachable",
+                "available",
+                "allowed_models",
+                "enabled",
+            )
+            if key in probe
+        }
+
+    return {
+        "checked_at": status.get("checked_at"),
+        "writer": public_probe(status.get("writer", {})),
+        "validator": public_probe(status.get("validator", {})),
+    }
 
 
 @router.post("/ui/analyze")

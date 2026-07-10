@@ -44,8 +44,8 @@ class FaultTreeMethod(RCAMethod):
         )
 
     def parse(self, report: RCAReport) -> RCAReport:
-        detail = (report.method_detail or {}).get("fault_tree")
-        if not isinstance(detail, dict) or not detail.get("top_event"):
+        detail = report.method_detail.fault_tree if report.method_detail else None
+        if detail is None:
             return report.model_copy(
                 update={
                     "validation_notes": [

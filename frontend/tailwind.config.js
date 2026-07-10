@@ -4,8 +4,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+        sans: ['Inter Variable', 'Inter Fallback', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono Variable', 'Cascadia Code', 'SF Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
       },
       fontSize: {
         micro: ['0.625rem', { lineHeight: '0.875rem' }],

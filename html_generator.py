@@ -478,12 +478,12 @@ def _mermaid_tree(report: RCAReport) -> str:
 # --------------------------------------------------------------------------- #
 def render_report_body(report: RCAReport, *, include_tree: bool = True) -> str:
     """Render the semantic report body (no document shell, no <style>)."""
-    detail = report.method_detail or {}
+    detail = report.method_detail
     method_sections = ""
-    if isinstance(detail.get("fishbone"), dict):
-        method_sections += _fishbone_section(detail["fishbone"])
-    if isinstance(detail.get("fault_tree"), dict):
-        method_sections += _fault_tree_section(detail["fault_tree"])
+    if detail and detail.fishbone:
+        method_sections += _fishbone_section(detail.fishbone.model_dump())
+    if detail and detail.fault_tree:
+        method_sections += _fault_tree_section(detail.fault_tree.model_dump())
 
     tree = _mermaid_tree(report) if (include_tree and not method_sections) else ""
 

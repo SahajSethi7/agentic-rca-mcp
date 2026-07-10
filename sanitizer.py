@@ -112,7 +112,10 @@ def enforce_length(text: str, max_chars: int, *, field_name: str = "input") -> S
     if text.endswith(TRUNCATION_MARKER) and len(text) <= max_chars + len(TRUNCATION_MARKER) + 1:
         # Already truncated by a previous pass; keep stable.
         return SanitizedText(text=text)
-    truncated = text[:max_chars].rstrip() + f"\n{TRUNCATION_MARKER}"
+    marker = f"\n{TRUNCATION_MARKER}"
+    content_budget = max(0, max_chars - len(marker))
+    truncated = text[:content_budget].rstrip() + marker
+    truncated = truncated[-max_chars:] if max_chars > 0 else ""
     return SanitizedText(
         text=truncated,
         findings=[f"truncated {field_name} from {len(text)} to {max_chars} chars"],
@@ -199,8 +202,9 @@ def sanitize_rca_input(
         findings.extend(area.findings)
         system_area = area.text or None
 
-    cleaned = rca_input.model_copy(
-        update={
+    cleaned = RCAInput.model_validate(
+        {
+            **rca_input.model_dump(),
             "problem_statement": problem.text,
             "context": context_text,
             "system_area": system_area,

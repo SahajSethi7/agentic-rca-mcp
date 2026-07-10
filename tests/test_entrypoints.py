@@ -103,7 +103,15 @@ def test_run_rca_pipeline_writes_artifacts_and_returns_summary(
     assert json_path.exists()
     assert json.loads(json_path.read_text(encoding="utf-8"))["method"] == "five_why"
     assert Path(result["html_path"]).exists()
+    assert Path(result["pdf_path"]).parent == Path(result["json_path"]).parent
+    assert Path(result["pdf_path"]).parent.parent.name == "runs"
     assert result["source_model"] == "stub-model"
+
+    second = server.run_rca_pipeline(
+        "Login API returns HTTP 500 immediately after a deployment.",
+        method="five_why",
+    )
+    assert Path(second["pdf_path"]).parent != Path(result["pdf_path"]).parent
 
 
 def test_mcp_tool_function_forwards_to_shared_pipeline(monkeypatch) -> None:

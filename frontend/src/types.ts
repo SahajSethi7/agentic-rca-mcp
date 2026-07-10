@@ -8,10 +8,10 @@ export interface WhyEntry { index: number; question: string; answer: string; }
 
 export interface FishboneDetail {
   categories: Record<string, string[]>;
-  selected_category?: string;
-  selected_cause?: string;
+  selected_category: string;
+  selected_cause: string;
 }
-export interface FaultTreeGate { type: string; event: string; children: string[]; }
+export interface FaultTreeGate { type: "AND" | "OR"; event: string; children: string[]; }
 export interface FaultTreeDetail { top_event: string; gates: FaultTreeGate[]; basic_causes: string[]; }
 export interface MethodDetail { fishbone?: FishboneDetail; fault_tree?: FaultTreeDetail; }
 
@@ -222,6 +222,14 @@ export interface ModelStatus {
     failed_by_type?: Record<string, number> | null;
     average_latency_seconds: number | null;
     warning?: string | null;
+  };
+}
+
+export interface ModelSelectionStatus {
+  checked_at?: string;
+  writer: Pick<ModelProbe, "role" | "configured_model" | "reachable" | "available" | "allowed_models">;
+  validator: Pick<ModelProbe, "role" | "configured_model" | "reachable" | "available" | "allowed_models"> & {
+    enabled?: boolean;
   };
 }
 

@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import type { Method, ModelStatus } from "../types";
+import type { Method, ModelSelectionStatus } from "../types";
 import { METHOD_SHORT } from "../types";
 import type { AnalyzePayload } from "../api";
 import { SAMPLE_INCIDENTS } from "../sampleIncidents";
 import { CheckIcon } from "./icons";
+import Button from "./ui/Button";
+import KeyValueList from "./ui/KeyValueList";
+import Select from "./ui/Select";
+import Switch from "./ui/Switch";
 
 const METHODS: { v: Method; icon: string; detail: string }[] = [
   { v: "five_why", icon: "5", detail: "Linear causal chain" },
@@ -44,7 +48,7 @@ export default function AnalysisForm({
   validationEnabled: boolean;
   allowedWriterModels?: string[];
   allowedValidatorModels?: string[];
-  modelStatus?: ModelStatus | null;
+  modelStatus?: ModelSelectionStatus | null;
 }) {
   const [problem, setProblem] = useState("");
   const [method, setMethod] = useState<Method>("five_why");
@@ -136,12 +140,12 @@ export default function AnalysisForm({
             } ${off ? "cursor-not-allowed opacity-40" : ""}`}
           >
             <span className="flex items-center gap-2">
-              <span className={`grid h-7 w-7 place-items-center rounded-md text-ui font-extrabold ${
-                on ? "bg-primary text-white" : "bg-slate-100 text-ink"
+              <span className={`grid h-7 w-7 place-items-center rounded-md text-ui font-bold ${
+                on ? "bg-primary-hover text-white" : "bg-slate-100 text-ink"
               }`}>
                 {m.icon}
               </span>
-              <span className="text-body-sm font-extrabold">{METHOD_SHORT[m.v]}</span>
+              <span className="text-body-sm font-bold">{METHOD_SHORT[m.v]}</span>
             </span>
             <span className="mt-1 block text-ui font-semibold leading-4 opacity-75">{m.detail}</span>
           </button>
@@ -161,7 +165,7 @@ export default function AnalysisForm({
         <div className="border-b border-slate-200 px-5 py-5 sm:px-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-caption font-extrabold uppercase tracking-[0.14em] text-primary-selected">New Analysis</p>
+              <p className="text-caption font-bold uppercase tracking-[0.14em] text-primary-selected">New Analysis</p>
               <h1 className="mt-1 text-title font-extrabold leading-tight tracking-tight text-ink">Create RCA Draft</h1>
               <p className="mt-2 max-w-[760px] text-body leading-6 text-ink-soft">
                 Describe the incident, choose an RCA method, and generate local PDF, HTML, and supporting artifacts.
@@ -178,20 +182,19 @@ export default function AnalysisForm({
             <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
               <label className="block text-body-sm font-semibold text-ink" htmlFor="problem">Problem statement</label>
               <div className="min-w-[240px]">
-                <label className="mb-1 block text-caption font-extrabold uppercase tracking-[0.12em] text-ink-muted" htmlFor="sample-incident">
+                <label className="mb-1 block text-caption font-bold uppercase tracking-[0.12em] text-ink-muted" htmlFor="sample-incident">
                   Load example incident
                 </label>
-                <select
+                <Select
                   id="sample-incident"
                   value={selectedExample}
                   onChange={(e) => loadExample(e.target.value)}
-                  className="h-10 w-full rounded-md border border-primary-soft bg-white px-3 text-ui font-semibold text-ink-soft outline-none transition hover:border-primary"
                 >
                   <option value="">Choose a demo-ready incident</option>
                   {SAMPLE_INCIDENTS.map((sample) => (
                     <option key={sample.id} value={sample.id}>{sample.label}</option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
             <textarea
@@ -233,11 +236,10 @@ export default function AnalysisForm({
 
           <div>
             <label className="mb-1.5 block text-body-sm font-semibold text-ink" htmlFor="generation-model">Writer model</label>
-            <select
+            <Select
               id="generation-model"
               value={generationModel}
               onChange={(e) => setGenerationModel(e.target.value)}
-              className="h-10 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-body font-semibold text-ink outline-none transition focus:border-primary focus:bg-white focus:ring-[3px] focus:ring-primary-tint"
             >
               {!modelOptions.length && <option value="">No allowlisted models configured</option>}
               {modelOptions.map((model) => {
@@ -248,7 +250,7 @@ export default function AnalysisForm({
                   </option>
                 );
               })}
-            </select>
+            </Select>
             <p className="mt-1.5 text-ui leading-5 text-ink-muted">
               Only allowlisted local writer models can be selected for this run.
             </p>
@@ -257,11 +259,10 @@ export default function AnalysisForm({
           {validationEnabled && (
             <div>
               <label className="mb-1.5 block text-body-sm font-semibold text-ink" htmlFor="validation-model">Validator model</label>
-              <select
+              <Select
                 id="validation-model"
                 value={validationModel}
                 onChange={(e) => setValidationModel(e.target.value)}
-                className="h-10 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-body font-semibold text-ink outline-none transition focus:border-primary focus:bg-white focus:ring-[3px] focus:ring-primary-tint"
               >
                 {validatorOptions.map((model) => {
                   const available = validatorAvailability.get(model);
@@ -271,7 +272,7 @@ export default function AnalysisForm({
                     </option>
                   );
                 })}
-              </select>
+              </Select>
               <p className="mt-1.5 text-ui leading-5 text-ink-muted">
                 Reviewer model that assigns final confidence and validation notes.
               </p>
@@ -314,21 +315,19 @@ export default function AnalysisForm({
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <button
-              type="button"
-              onClick={() => setCompareOn(!compareOn)}
-              className="flex w-full items-center justify-between gap-3 text-left"
-            >
-              <span>
+            <div className="flex w-full items-center justify-between gap-3 text-left">
+              <span id="compare-methods-label">
                 <span className="block text-body-sm font-semibold text-ink">Compare methods</span>
                 <span className="block text-ui text-ink-muted">Run a second RCA method side by side.</span>
               </span>
-              <span className={`relative h-6 w-11 flex-shrink-0 rounded-full transition ${compareOn ? "bg-primary-hover" : "bg-slate-300"}`}>
-                <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-all ${compareOn ? "left-6" : "left-1"}`} />
-              </span>
-            </button>
+              <Switch
+                checked={compareOn}
+                onCheckedChange={setCompareOn}
+                aria-labelledby="compare-methods-label"
+              />
+            </div>
             {compareOn && (
-              <div className="mt-4">
+              <div className="surface-enter mt-4">
                 <label className="mb-2 block text-ui font-semibold text-ink">Second method</label>
                 {methodControl(effectiveCompare, setCompareMethod, method)}
               </div>
@@ -339,26 +338,24 @@ export default function AnalysisForm({
 
       <aside className="rounded-lg border border-slate-200 bg-white shadow-card xl:sticky xl:top-[84px]">
         <div className="border-b border-slate-200 px-5 py-4">
-          <p className="text-caption font-extrabold uppercase tracking-[0.14em] text-ink-muted">Run Summary</p>
-          <h2 className="mt-1 text-section font-extrabold text-ink">Draft configuration</h2>
+          <p className="text-caption font-bold uppercase tracking-[0.14em] text-ink-muted">Run Summary</p>
+          <h2 className="mt-1 text-section font-bold text-ink">Draft configuration</h2>
         </div>
         <div className="space-y-4 p-5">
-          {[
-            ["Method", METHOD_SHORT[method]],
-            ["Severity", labelForSeverity(severity)],
-            ["System area", systemArea.trim() || "Not set"],
-            ["Writer model", generationModel || writerModel],
-            ["Validator", validationEnabled ? validationModel || validatorModel : "Off"],
-            ["Memory", memoryLabel],
-          ].map(([label, value]) => (
-            <div key={label} className="grid grid-cols-[112px_minmax(0,1fr)] gap-3 text-body-sm">
-              <span className="font-bold text-ink-muted">{label}</span>
-              <span className="min-w-0 break-words font-extrabold text-ink">{value}</span>
-            </div>
-          ))}
+          <KeyValueList
+            labelWidth="112px"
+            items={[
+              ["Method", METHOD_SHORT[method]],
+              ["Severity", labelForSeverity(severity)],
+              ["System area", systemArea.trim() || "Not set"],
+              ["Writer model", generationModel || writerModel],
+              ["Validator", validationEnabled ? validationModel || validatorModel : "Off"],
+              ["Memory", memoryLabel],
+            ]}
+          />
 
           <div className="border-t border-slate-200 pt-4">
-            <p className="mb-3 text-ui font-extrabold uppercase tracking-[0.12em] text-ink-muted">Expected outputs</p>
+            <p className="mb-3 text-ui font-bold uppercase tracking-[0.12em] text-ink-muted">Expected outputs</p>
             <div className="space-y-2">
               {["HTML web report", "PDF printable report", "Matching past RCA Excel workbook"].map((item) => (
                 <div key={item} className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
@@ -370,20 +367,21 @@ export default function AnalysisForm({
           </div>
 
           <div className="rounded-lg border border-primary-soft bg-primary-tint px-4 py-3">
-            <p className="text-body-sm font-extrabold text-primary-selected">Local-first by design</p>
+            <p className="text-body-sm font-bold text-primary-selected">Local-first by design</p>
             <p className="mt-1 text-ui leading-5 text-primary-selected">
               Analysis runs against the configured model provider. Outputs are written locally and the model server must be available.
             </p>
           </div>
 
-          <button
+          <Button
             type="submit"
+            size="lg"
             disabled={busy || !canSubmit}
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-body font-extrabold text-white shadow-[0_14px_28px_-18px_rgba(0,159,219,.75)] transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full shadow-[0_14px_28px_-18px_rgba(0,90,143,.65)]"
           >
             {busy && <span className="h-4 w-4 animate-spin rounded-full border-[2.5px] border-white/40 border-t-white" />}
             {busy ? "Starting analysis" : "Generate RCA"}
-          </button>
+          </Button>
         </div>
       </aside>
     </form>

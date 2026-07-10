@@ -130,12 +130,53 @@ def test_rca_report_rejects_missing_required_fields() -> None:
 
 def test_rca_report_accepts_method_detail_and_agent_fields() -> None:
     payload = valid_report_dict()
-    payload["method_detail"] = {"method": "five_why"}
+    payload["method_detail"] = {
+        "fault_tree": {
+            "top_event": "Checkout requests fail",
+            "gates": [
+                {
+                    "type": "OR",
+                    "event": "Connection acquisition fails",
+                    "children": ["Pool exhausted", "Lease timeout exceeded"],
+                }
+            ],
+            "basic_causes": ["Pool capacity too low", "Retry interval too short"],
+        }
+    }
     payload["assumptions"] = ["No logs were supplied."]
     payload["evidence_needed"] = ["Deployment logs"]
     payload["validation_notes"] = ["No critique run yet."]
     parsed = RCAReport.model_validate(payload)
-    assert parsed.method_detail == {"method": "five_why"}
+    assert parsed.method_detail is not None
+    assert parsed.method_detail.fault_tree is not None
+    assert parsed.method_detail.fault_tree.gates[0].type == "OR"
+
+
+def test_rca_report_rejects_malformed_method_detail() -> None:
+    payload = valid_report_dict()
+    payload["method_detail"] = {
+        "fault_tree": {
+            "top_event": "Checkout requests fail",
+            "gates": "not-a-list",
+            "basic_causes": [],
+        }
+    }
+    with pytest.raises(ValidationError):
+        RCAReport.model_validate(payload)
+
+
+def test_rca_report_rejects_fishbone_with_only_one_nonempty_category() -> None:
+    payload = valid_report_dict()
+    payload["method_detail"] = {
+        "fishbone": {
+            "categories": {"Process": ["Missing release gate"], "Tooling": []},
+            "selected_category": "Process",
+            "selected_cause": "Missing release gate",
+        }
+    }
+
+    with pytest.raises(ValidationError):
+        RCAReport.model_validate(payload)
 
 
 def test_generation_report_promotes_to_full_rca_report() -> None:

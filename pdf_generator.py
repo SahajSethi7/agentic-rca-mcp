@@ -449,11 +449,11 @@ def build_pdf(report: RCAReport, output_path: str | Path) -> Path:
     story.append(_why_table(report, styles))
     story.append(Spacer(1, 4))
 
-    detail = report.method_detail or {}
-    if isinstance(detail.get("fishbone"), dict):
-        story += _fishbone_section(detail["fishbone"], styles)
-    if isinstance(detail.get("fault_tree"), dict):
-        story += _fault_tree_section(detail["fault_tree"], styles)
+    detail = report.method_detail
+    if detail and detail.fishbone:
+        story += _fishbone_section(detail.fishbone.model_dump(), styles)
+    if detail and detail.fault_tree:
+        story += _fault_tree_section(detail.fault_tree.model_dump(), styles)
 
     story += _heading("Root Cause", styles)
     root_box = Table(

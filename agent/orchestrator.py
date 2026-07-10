@@ -165,20 +165,33 @@ class RCAAgent:
             )
             memory_matches = memory_search.matches
             if memory_search.evidence_pack:
-                memory_context = sanitize_text(
-                    memory_search.evidence_pack,
-                    self.settings.max_context_chars,
-                    field_name="past_rca_memory",
+                existing_context = rca_input.context or ""
+                separator_size = 2 if existing_context else 0
+                remaining = max(
+                    0,
+                    self.settings.max_context_chars - len(existing_context) - separator_size,
                 )
-                sanitizer_findings.extend(memory_context.findings)
-                rca_input = rca_input.model_copy(
-                    update={
-                        "context": append_memory_to_context(
-                            rca_input.context,
-                            memory_context.text,
-                        )
-                    }
-                )
+                if remaining:
+                    memory_context = sanitize_text(
+                        memory_search.evidence_pack,
+                        remaining,
+                        field_name="past_rca_memory",
+                    )
+                    sanitizer_findings.extend(memory_context.findings)
+                    combined_context = append_memory_to_context(
+                        rca_input.context,
+                        memory_context.text,
+                    )
+                    rca_input = RCAInput.model_validate(
+                        {
+                            **rca_input.model_dump(),
+                            "context": combined_context,
+                        }
+                    )
+                else:
+                    sanitizer_findings.append(
+                        "omitted past_rca_memory from model context because the context budget was exhausted"
+                    )
             if memory_search.warning:
                 logger.info("RCA memory note: %s", memory_search.warning)
 

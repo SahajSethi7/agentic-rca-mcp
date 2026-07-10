@@ -93,6 +93,7 @@ GENERIC_ROOT_CAUSES = {
 }
 
 _WRITEBACK_LOCK = threading.Lock()
+_EXCEL_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
 
 
 @dataclass(frozen=True)
@@ -139,6 +140,15 @@ def _text(value: Any) -> str:
     if isinstance(value, float) and math.isnan(value):
         return ""
     return str(value).strip()
+
+
+def _excel_cell(value: Any) -> Any:
+    """Neutralize untrusted strings that spreadsheet apps may execute as formulas."""
+    if not isinstance(value, str):
+        return value
+    if value.startswith(_EXCEL_FORMULA_PREFIXES):
+        return "'" + value
+    return value
 
 
 def _date_text(value: Any) -> str | None:
@@ -972,7 +982,11 @@ def append_rca_to_memory(
 
         row_number = sheet.max_row + 1
         for column, header in enumerate(headers, start=1):
-            sheet.cell(row=row_number, column=column, value=record.get(header, ""))
+            sheet.cell(
+                row=row_number,
+                column=column,
+                value=_excel_cell(record.get(header, "")),
+            )
 
         workbook.save(memory_path)
 
@@ -1015,7 +1029,7 @@ def build_memory_matches_workbook(
     summary["A1"].font = Font(size=16, bold=True, color="FFFFFF")
     summary["A1"].fill = title_fill
     summary["A3"] = "Current problem statement"
-    summary["B3"] = current_problem
+    summary["B3"] = _excel_cell(current_problem)
     summary["A4"] = "Match threshold"
     summary["B4"] = f"{round(min_score * 100)}%"
     summary["A5"] = "Matching records"
@@ -1060,24 +1074,24 @@ def build_memory_matches_workbook(
             matches_sheet.append(
                 [
                     round(match.similarity_score * 100),
-                    match.incident_id,
-                    match.date or "",
-                    match.system_area or "",
-                    match.service_name or "",
-                    match.error_signature or "",
-                    match.problem_statement,
-                    match.symptoms or "",
-                    match.root_cause,
-                    match.immediate_fix or "",
-                    match.long_term_fix or "",
-                    match.evidence_checked or "",
-                    match.owner_team or "",
-                    match.tags or "",
-                    match.confidence or "",
-                    match.status or "",
-                    match.retrieval_mode,
-                    " | ".join(match.graph_path),
-                    match.match_reason,
+                    _excel_cell(match.incident_id),
+                    _excel_cell(match.date or ""),
+                    _excel_cell(match.system_area or ""),
+                    _excel_cell(match.service_name or ""),
+                    _excel_cell(match.error_signature or ""),
+                    _excel_cell(match.problem_statement),
+                    _excel_cell(match.symptoms or ""),
+                    _excel_cell(match.root_cause),
+                    _excel_cell(match.immediate_fix or ""),
+                    _excel_cell(match.long_term_fix or ""),
+                    _excel_cell(match.evidence_checked or ""),
+                    _excel_cell(match.owner_team or ""),
+                    _excel_cell(match.tags or ""),
+                    _excel_cell(match.confidence or ""),
+                    _excel_cell(match.status or ""),
+                    _excel_cell(match.retrieval_mode),
+                    _excel_cell(" | ".join(match.graph_path)),
+                    _excel_cell(match.match_reason),
                 ]
             )
     else:
@@ -1089,7 +1103,7 @@ def build_memory_matches_workbook(
                 "",
                 "",
                 "",
-                current_problem,
+                _excel_cell(current_problem),
                 "",
                 "",
                 "",

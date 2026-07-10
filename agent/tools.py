@@ -230,12 +230,12 @@ def _normalized_phrase(text: str) -> str:
 
 def check_method_consistency(report: RCAReport) -> list[CritiqueIssue]:
     """Flag method-specific details that contradict the canonical fields."""
-    detail = report.method_detail or {}
+    detail = report.method_detail
     issues: list[CritiqueIssue] = []
 
     if report.method == "fishbone":
-        fishbone = detail.get("fishbone")
-        if not isinstance(fishbone, dict):
+        fishbone = detail.fishbone if detail else None
+        if fishbone is None:
             return [
                 CritiqueIssue(
                     check="method_consistency",
@@ -244,18 +244,10 @@ def check_method_consistency(report: RCAReport) -> list[CritiqueIssue]:
                 )
             ]
 
-        categories = fishbone.get("categories")
-        selected_category = fishbone.get("selected_category")
-        selected_cause = fishbone.get("selected_cause")
-        if not isinstance(categories, dict):
-            issues.append(
-                CritiqueIssue(
-                    check="method_consistency",
-                    severity="high",
-                    message="Fishbone method_detail must include a categories object.",
-                )
-            )
-        elif selected_category and selected_category not in categories:
+        categories = fishbone.categories
+        selected_category = fishbone.selected_category
+        selected_cause = fishbone.selected_cause
+        if selected_category not in categories:
             issues.append(
                 CritiqueIssue(
                     check="method_consistency",
@@ -264,15 +256,7 @@ def check_method_consistency(report: RCAReport) -> list[CritiqueIssue]:
                 )
             )
 
-        if not isinstance(selected_cause, str) or not selected_cause.strip():
-            issues.append(
-                CritiqueIssue(
-                    check="method_consistency",
-                    severity="high",
-                    message="Fishbone selected_cause is required.",
-                )
-            )
-        elif _normalized_phrase(report.root_cause) != _normalized_phrase(selected_cause):
+        if _normalized_phrase(report.root_cause) != _normalized_phrase(selected_cause):
             issues.append(
                 CritiqueIssue(
                     check="method_consistency",
@@ -285,8 +269,8 @@ def check_method_consistency(report: RCAReport) -> list[CritiqueIssue]:
             )
 
     if report.method == "fault_tree":
-        fault_tree = detail.get("fault_tree")
-        if not isinstance(fault_tree, dict):
+        fault_tree = detail.fault_tree if detail else None
+        if fault_tree is None:
             return [
                 CritiqueIssue(
                     check="method_consistency",
@@ -295,17 +279,9 @@ def check_method_consistency(report: RCAReport) -> list[CritiqueIssue]:
                 )
             ]
 
-        gates = fault_tree.get("gates")
-        basic_causes = fault_tree.get("basic_causes")
-        if not fault_tree.get("top_event"):
-            issues.append(
-                CritiqueIssue(
-                    check="method_consistency",
-                    severity="high",
-                    message="Fault-tree method_detail requires a top_event.",
-                )
-            )
-        if not isinstance(gates, list) or not 1 <= len(gates) <= 3:
+        gates = fault_tree.gates
+        basic_causes = fault_tree.basic_causes
+        if not 1 <= len(gates) <= 3:
             issues.append(
                 CritiqueIssue(
                     check="method_consistency",
@@ -313,7 +289,7 @@ def check_method_consistency(report: RCAReport) -> list[CritiqueIssue]:
                     message="Fault-tree method_detail must contain 1-3 gates.",
                 )
             )
-        if not isinstance(basic_causes, list) or not 2 <= len(basic_causes) <= 5:
+        if not 2 <= len(basic_causes) <= 5:
             issues.append(
                 CritiqueIssue(
                     check="method_consistency",

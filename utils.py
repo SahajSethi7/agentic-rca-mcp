@@ -38,6 +38,7 @@ ERROR_STATUS: dict[str, int] = {
     "model_output_invalid": 502,
     "write_denied": 500,
     "rate_limited": 429,
+    "job_interrupted": 500,
     "internal_error": 500,
 }
 

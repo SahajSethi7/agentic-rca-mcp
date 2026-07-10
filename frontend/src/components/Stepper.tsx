@@ -1,6 +1,8 @@
 import { Fragment } from "react";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
 import type { ActivityItem, Stage } from "../types";
 import { CheckIcon } from "./icons";
+import AnimatedNumber from "./ui/AnimatedNumber";
 
 export const FLOW: Stage[] = ["queued", "planning", "generating", "critiquing", "revising", "validating", "rendering"];
 
@@ -70,13 +72,14 @@ function StageIcon({ done, current, index }: { done: boolean; current: boolean; 
       ? "border-primary bg-white text-primary-selected pulse-ring"
       : "border-slate-300 bg-white text-slate-400";
   return (
-    <span className={`grid h-9 w-9 place-items-center rounded-full border-2 text-ui font-extrabold ${cls}`}>
+    <span className={`grid h-9 w-9 place-items-center rounded-full border-2 text-ui font-bold transition-colors duration-300 ${cls}`}>
       {done ? <CheckIcon className="h-5 w-5" /> : index + 1}
     </span>
   );
 }
 
 export function ActivityTrace({ activity = [], compact = false }: { activity?: ActivityItem[]; compact?: boolean }) {
+  const [activityRef] = useAutoAnimate<HTMLOListElement>({ duration: 180, easing: "ease-out" });
   const visible = compact ? activity.slice(-6) : activity;
   if (visible.length === 0) {
     return (
@@ -94,7 +97,7 @@ export function ActivityTrace({ activity = [], compact = false }: { activity?: A
     <div className="rounded-lg border border-slate-200 bg-white" aria-live="polite">
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
         <div className="flex items-center gap-2">
-          <p className="text-body-sm font-extrabold text-ink">Live Activity Feed</p>
+          <p className="text-body-sm font-bold text-ink">Live Activity Feed</p>
           <span className="inline-flex items-center gap-1.5 rounded-md bg-primary-tint px-2 py-1 text-caption font-bold text-primary-selected">
             <span className="h-1.5 w-1.5 rounded-full bg-primary" />
             Streaming
@@ -102,14 +105,14 @@ export function ActivityTrace({ activity = [], compact = false }: { activity?: A
         </div>
         <span className="rounded-md bg-slate-100 px-2 py-1 text-caption font-bold text-ink-muted">{activity.length} events</span>
       </div>
-      <ol className="divide-y divide-slate-100">
+      <ol ref={activityRef} className="divide-y divide-slate-100">
         {visible.map((item, index) => {
           const fullIndex = compact ? Math.max(activity.length - visible.length, 0) + index : index;
           const previous = activity[fullIndex - 1];
           const clock = formatClock(item.at);
           const duration = formatDuration(item.elapsed_ms ?? (item.at && previous?.at ? item.at - previous.at : null));
           return (
-          <li key={`${item.stage}-${index}-${item.title}`} className="px-4 py-3">
+          <li key={`${item.stage}-${index}-${item.title}`} className="feed-enter px-4 py-3">
             <div className="grid gap-3 sm:grid-cols-[86px_minmax(0,1fr)]">
               <span className="text-ui font-mono font-bold text-ink-muted">{LABEL[item.stage] ?? item.stage}</span>
               <div className="min-w-0">
@@ -119,10 +122,10 @@ export function ActivityTrace({ activity = [], compact = false }: { activity?: A
                   }`} />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="break-words text-body-sm font-extrabold text-ink">{item.title}</p>
+                      <p className="break-words text-body-sm font-bold text-ink">{item.title}</p>
                       {(clock || duration) && (
                         <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-caption font-bold text-ink-muted">
-                          {[clock, duration ? `+${duration}` : null].filter(Boolean).join(" \u00b7 ")}
+                          {[clock, duration ? `+${duration}` : null].filter(Boolean).join(" - ")}
                         </span>
                       )}
                     </div>
@@ -179,7 +182,7 @@ export default function Stepper({ stage, round }: { stage: Stage; round?: number
                 {i > 0 && (
                   <span className="relative mx-2 mt-[18px] h-0.5 flex-1 overflow-hidden rounded bg-slate-200" aria-hidden="true">
                     <span
-                      className="absolute inset-y-0 left-0 rounded bg-primary transition-all"
+                      className="absolute inset-y-0 left-0 rounded bg-primary transition-all duration-500 ease-out"
                       style={{ width: `${connectorFillPct(i, progress)}%` }}
                     />
                   </span>
@@ -196,15 +199,15 @@ export default function Stepper({ stage, round }: { stage: Stage; round?: number
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-ui font-bold text-ink-soft">
-          <span className="font-extrabold text-ink">{stageLabel}</span>
+        <p className="text-ui font-semibold text-ink-soft">
+          <span className="font-bold text-ink">{stageLabel}</span>
           <span className="mx-2 text-slate-300">|</span>
           {note}
         </p>
-        <p className="text-ui font-extrabold text-primary-selected">{progress}%</p>
+        <p className="text-ui font-bold text-primary-selected"><AnimatedNumber value={progress} format={(v) => `${Math.round(v)}%`} /></p>
       </div>
-      <div className="mt-2 h-2 rounded-full bg-slate-100">
-        <div className="h-2 rounded-full bg-gradient-to-r from-att-500 via-att-400 to-att-700 transition-all" style={{ width: `${progress}%` }} />
+      <div className="mt-2 h-2 rounded-full bg-slate-100" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label="Pipeline progress">
+        <div className="h-2 rounded-full bg-gradient-to-r from-att-500 via-att-400 to-att-700 transition-all duration-500 ease-out" style={{ width: `${progress}%` }} />
       </div>
     </div>
   );

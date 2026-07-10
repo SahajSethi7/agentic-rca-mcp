@@ -16,6 +16,7 @@ import logging
 import threading
 import time
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 from typing import Any
@@ -40,10 +41,30 @@ from utils import (
 logger = logging.getLogger("agentic_rca.api")
 
 
-app = FastAPI(title="RCA Assistant API")
 _RATE_LIMIT_LOCK = threading.Lock()
 _RATE_LIMIT_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
+_RATE_LIMIT_LAST_SWEEP = 0.0
 _BODY_LIMIT_METHODS = {"POST", "PUT", "PATCH"}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _ = app
+    settings = get_settings()
+    if not settings.auth_enabled:
+        logger.warning(
+            "AUTH_ENABLED=false: RCA routes are unauthenticated. Bind ports to loopback "
+            "or enable Auth0 before exposing this service."
+        )
+    from web.jobs import manager
+
+    interrupted = manager.recover_interrupted_history()
+    if interrupted:
+        logger.warning("Marked %d persisted job(s) interrupted after restart.", interrupted)
+    yield
+
+
+app = FastAPI(title="RCA Assistant API", lifespan=lifespan)
 
 
 def _structured_body_too_large(max_bytes: int) -> JSONResponse:
@@ -121,6 +142,7 @@ async def _enforce_streaming_body_limit(request: Request, max_bytes: int) -> JSO
 
 @app.middleware("http")
 async def request_guard(request: Request, call_next):
+    global _RATE_LIMIT_LAST_SWEEP
     settings = get_settings()
     if request.method in _BODY_LIMIT_METHODS:
         size_error = await _enforce_streaming_body_limit(
@@ -134,6 +156,15 @@ async def request_guard(request: Request, call_next):
             client = _rate_limit_key(request, settings.trusted_proxy_hosts)
             now = time.monotonic()
             with _RATE_LIMIT_LOCK:
+                if now - _RATE_LIMIT_LAST_SWEEP >= 60:
+                    stale = [
+                        key
+                        for key, candidate in _RATE_LIMIT_BUCKETS.items()
+                        if not candidate or now - candidate[-1] > 60
+                    ]
+                    for key in stale:
+                        _RATE_LIMIT_BUCKETS.pop(key, None)
+                    _RATE_LIMIT_LAST_SWEEP = now
                 bucket = _RATE_LIMIT_BUCKETS[client]
                 while bucket and now - bucket[0] > 60:
                     bucket.popleft()
@@ -148,15 +179,6 @@ async def request_guard(request: Request, call_next):
                 bucket.append(now)
     return await call_next(request)
 
-
-@app.on_event("startup")
-async def warn_when_auth_disabled() -> None:
-    settings = get_settings()
-    if not settings.auth_enabled:
-        logger.warning(
-            "AUTH_ENABLED=false: RCA routes are unauthenticated. Bind ports to loopback "
-            "or enable Auth0 before exposing this service."
-        )
 
 # Phase 6: mount the web UI job/streaming routes on this same app, so the
 # browser inherits the guarded pipeline (sanitization, structured errors, audit
